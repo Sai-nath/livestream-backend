@@ -60,3 +60,5 @@ server.listen(PORT, () => {
     console.log('CORS origins:', getAllowedOrigin());
     console.log('Environment:', process.env.NODE_ENV);
 });
+
+module.exports = server;
