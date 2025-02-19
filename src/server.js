@@ -9,7 +9,11 @@ const app = express();
 
 // Get allowed origin from environment variable
 const getAllowedOrigin = () => {
-    return process.env.FRONTEND_URL || 'http://localhost:3000'; // Fallback for safety
+    const origins = [process.env.FRONTEND_URL];
+    if (process.env.WEBSITE_CORS_ALLOWED_ORIGINS) {
+        origins.push(...process.env.WEBSITE_CORS_ALLOWED_ORIGINS.split(','));
+    }
+    return origins.filter(origin => origin); // Filter out empty values
 };
 
 // Middleware
@@ -21,6 +25,11 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'healthy' });
+});
 
 // Single API route
 app.use('/api', apiRoutes);
@@ -44,7 +53,10 @@ db.initialize()
     });
 
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
 
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on ${HOST}:${PORT}`);
+    console.log('CORS origins:', getAllowedOrigin());
+    console.log('Environment:', process.env.NODE_ENV);
 });
