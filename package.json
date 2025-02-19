@@ -4,7 +4,7 @@
   "description": "Backend for iNube LiveStreaming Insurance Claims Platform",
   "main": "src/index.js",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=21.0.0"
   },
   "scripts": {
     "start": "node src/index.js",
