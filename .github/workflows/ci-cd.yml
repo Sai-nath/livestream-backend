@@ -1,0 +1,51 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14.x'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Set environment variables
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "Setting production environment"
+          cp .env.production .env
+        else
+          echo "Setting development environment"
+          cp .env.development .env
+        fi
+
+    - name: Build
+      run: npm run build
+
+    - name: Deploy to Azure Web App
+      if: github.ref == 'refs/heads/main'
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: 'livestreamingclaims-hpaedbd6b6gbhkb0'
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: .
+
+    - name: Start application
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          npm run prod
+        else
+          npm run dev
+        fi

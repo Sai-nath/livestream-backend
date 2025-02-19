@@ -7,9 +7,14 @@ const apiRoutes = require('./routes/api.routes');
 
 const app = express();
 
+// Get allowed origin from environment variable
+const getAllowedOrigin = () => {
+    return process.env.FRONTEND_URL || 'http://localhost:3000'; // Fallback for safety
+};
+
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:5173', process.env.PRODUCTION_FRONTEND_URL, process.env.BACKEND_DOMAIN], 
+    origin: getAllowedOrigin(),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true

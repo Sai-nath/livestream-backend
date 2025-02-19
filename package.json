@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Backend for iNube LiveStreaming Insurance Claims Platform",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
@@ -23,7 +26,7 @@
     "sequelize": "^6.37.5",
     "socket.io": "^4.8.1",
     "sqlite3": "^5.1.7",
-    "tedious": "^18.6.1"
+    "tedious": "^11.8.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
