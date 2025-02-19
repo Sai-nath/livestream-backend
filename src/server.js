@@ -16,18 +16,25 @@ const getAllowedOrigin = () => {
     console.log('=== CORS Configuration ===');
     console.log('Allowed Origins:', origins);
     console.log('========================');
-    return origins.filter(origin => origin); // Filter out empty values
+    return origins;
 };
 
-// Middleware
+// CORS Configuration
 app.use(cors({
     origin: getAllowedOrigin(),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Pre-flight requests
+app.options('*', cors());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -40,7 +47,11 @@ app.get('/health', (req, res) => {
         status: 'healthy',
         time: new Date().toISOString(),
         env: process.env.NODE_ENV,
-        node: process.version
+        node: process.version,
+        cors: {
+            frontendUrl: process.env.FRONTEND_URL,
+            allowedOrigins: getAllowedOrigin()
+        }
     });
 });
 
