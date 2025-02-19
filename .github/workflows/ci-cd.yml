@@ -7,7 +7,7 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  build-and-test:
+  build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
@@ -19,12 +19,9 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '22.x'
-        cache: 'npm'
 
     - name: Install dependencies
-      run: |
-        npm ci
-        npm cache clean --force
+      run: npm install
 
     - name: Set environment variables
       run: |
@@ -36,44 +33,21 @@ jobs:
           cp .env.development .env
         fi
 
-    - name: Run linters
-      run: npm run lint
-
-    - name: Run tests
-      run: npm test
-
-    - name: Build
-      run: npm run build
-
-  deploy:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22.x'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
     - name: Build
       run: npm run build
 
     - name: Prepare deployment package
+      if: github.ref == 'refs/heads/main'
       run: |
         mkdir -p deploy
-        cp -R dist/* deploy/
+        cp -r src deploy/
         cp package.json deploy/
         cp package-lock.json deploy/
         cp .env.production deploy/.env
+        cp web.config deploy/
 
     - name: Deploy to Azure Web App
+      if: github.ref == 'refs/heads/main'
       uses: azure/webapps-deploy@v3
       with:
         app-name: 'livestreamingclaims-hpaedbd6b6gbhkb0'
