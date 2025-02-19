@@ -13,6 +13,9 @@ const getAllowedOrigin = () => {
     if (process.env.WEBSITE_CORS_ALLOWED_ORIGINS) {
         origins.push(...process.env.WEBSITE_CORS_ALLOWED_ORIGINS.split(','));
     }
+    console.log('=== CORS Configuration ===');
+    console.log('Allowed Origins:', origins);
+    console.log('========================');
     return origins.filter(origin => origin); // Filter out empty values
 };
 
@@ -28,7 +31,17 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'healthy' });
+    console.log('=== Health Check ===');
+    console.log('Time:', new Date().toISOString());
+    console.log('Request IP:', req.ip);
+    console.log('Headers:', req.headers);
+    console.log('===================');
+    res.status(200).json({ 
+        status: 'healthy',
+        time: new Date().toISOString(),
+        env: process.env.NODE_ENV,
+        node: process.version
+    });
 });
 
 // Single API route
@@ -36,7 +49,13 @@ app.use('/api', apiRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error('=== Error Handler ===');
+    console.error('Time:', new Date().toISOString());
+    console.error('Error:', err.message);
+    console.error('Stack:', err.stack);
+    console.error('Request Path:', req.path);
+    console.error('Request Method:', req.method);
+    console.error('===================');
     res.status(500).json({ message: 'Something broke!' });
 });
 
@@ -46,10 +65,19 @@ const io = initializeSocket(server);
 // Initialize database with test data
 db.initialize()
     .then(() => {
-        console.log('Database synced successfully');
+        console.log('=== Database Connection ===');
+        console.log('Status: Connected');
+        console.log('Server:', process.env.DB_SERVER);
+        console.log('Database:', process.env.DB_NAME);
+        console.log('Time:', new Date().toISOString());
+        console.log('========================');
     })
     .catch((err) => {
-        console.error('Failed to sync database:', err);
+        console.error('=== Database Error ===');
+        console.error('Time:', new Date().toISOString());
+        console.error('Error:', err.message);
+        console.error('Stack:', err.stack);
+        console.error('====================');
     });
 
 const PORT = process.env.PORT || 5000;
