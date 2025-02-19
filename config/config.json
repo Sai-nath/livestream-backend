@@ -1,0 +1,41 @@
+{
+  "development": {
+    "username": "saiadmin",
+    "password": "Sainath@518181",
+    "database": "LiveStreaming",
+    "server": "insurenexcore.database.windows.net",
+    "dialect": "mssql",
+    "dialectOptions": {
+      "options": {
+        "encrypt": true,
+        "trustServerCertificate": true
+      }
+    }
+  },
+  "test": {
+    "username": "saiadmin",
+    "password": "Sainath@518181",
+    "database": "LiveStreaming",
+    "server": "insurenexcore.database.windows.net",
+    "dialect": "mssql",
+    "dialectOptions": {
+      "options": {
+        "encrypt": true,
+        "trustServerCertificate": true
+      }
+    }
+  },
+  "production": {
+    "username": "saiadmin",
+    "password": "Sainath@518181",
+    "database": "LiveStreaming",
+    "server": "insurenexcore.database.windows.net",
+    "dialect": "mssql",
+    "dialectOptions": {
+      "options": {
+        "encrypt": true,
+        "trustServerCertificate": true
+      }
+    }
+  }
+}
