@@ -121,7 +121,8 @@ const initializeSocket = (server) => {
                 'http://localhost:3000',
                 'http://192.168.8.120:3000',
                 'https://localhost:3000',
-                'https://192.168.8.120:3000'
+                'https://192.168.8.120:3000',
+                 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net'
             ],
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
             allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],

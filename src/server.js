@@ -14,7 +14,9 @@ const corsOptions = {
             'http://localhost:3000',
             'http://192.168.8.120:3000',
             'https://localhost:3000',
-            'https://192.168.8.120:3000'
+            'https://192.168.8.120:3000',
+            'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net',
+            'https://nice-sea-057f1c900.4.azurestaticapps.net'
         ];
         
         // Allow requests with no origin (like mobile apps or curl requests)
@@ -60,7 +62,7 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000']
+            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net','https://nice-sea-057f1c900.4.azurestaticapps.net']
         }
     });
 });
@@ -106,7 +108,7 @@ const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
 
 server.listen(PORT, () => {
     console.log(`Server is running on ${HOST}:${PORT}`);
-    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000']);
+    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000', 'https://nice-sea-057f1c900.4.azurestaticapps.net']);
     console.log('Environment:', process.env.NODE_ENV);
 });
 
