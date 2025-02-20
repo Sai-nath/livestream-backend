@@ -10,21 +10,29 @@ const app = express();
 // CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
-        const allowedOrigins = [
+        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || '').split(',').filter(Boolean);
+        
+        // Always include the frontend URL if specified
+        if (process.env.FRONTEND_URL) {
+            allowedOrigins.push(process.env.FRONTEND_URL);
+        }
+        
+        // Default fallback origins for development
+        const defaultOrigins = [
             'http://localhost:3000',
-            'http://192.168.8.120:3000',
             'https://localhost:3000',
-            'https://192.168.8.120:3000',
-            'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net',
-            'https://nice-sea-057f1c900.4.azurestaticapps.net'
+            'http://192.168.8.120:3000',
+            'https://192.168.8.120:3000'
         ];
+        
+        const combinedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
         
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) {
             return callback(null, true);
         }
         
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        if (combinedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
             console.log('Origin not allowed by CORS:', origin);

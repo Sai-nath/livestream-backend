@@ -1,9 +1,9 @@
 {
   "development": {
-    "username": "saiadmin",
-    "password": "Sainath@518181",
-    "database": "LiveStreaming",
-    "server": "insurenexcore.database.windows.net",
+    "username": "${DB_USER:-saiadmin}",
+    "password": "${DB_PASSWORD:-Sainath@518181}",
+    "database": "${DB_NAME:-LiveStreaming}",
+    "server": "${DB_SERVER:-insurenexcore.database.windows.net}",
     "dialect": "mssql",
     "dialectOptions": {
       "options": {
@@ -13,10 +13,10 @@
     }
   },
   "test": {
-    "username": "saiadmin",
-    "password": "Sainath@518181",
-    "database": "LiveStreaming",
-    "server": "insurenexcore.database.windows.net",
+    "username": "${DB_USER:-saiadmin}",
+    "password": "${DB_PASSWORD:-Sainath@518181}",
+    "database": "${DB_NAME:-LiveStreaming}",
+    "server": "${DB_SERVER:-insurenexcore.database.windows.net}",
     "dialect": "mssql",
     "dialectOptions": {
       "options": {
@@ -26,10 +26,10 @@
     }
   },
   "production": {
-    "username": "saiadmin",
-    "password": "Sainath@518181",
-    "database": "LiveStreaming",
-    "server": "insurenexcore.database.windows.net",
+    "username": "${DB_USER:-saiadmin}",
+    "password": "${DB_PASSWORD:-Sainath@518181}",
+    "database": "${DB_NAME:-LiveStreaming}",
+    "server": "${DB_SERVER:-insurenexcore.database.windows.net}",
     "dialect": "mssql",
     "dialectOptions": {
       "options": {

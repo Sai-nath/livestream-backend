@@ -2,9 +2,17 @@ const { Sequelize, DataTypes } = require('sequelize');
 const config = require('../../config/config.json')[process.env.NODE_ENV || 'development'];
 const bcrypt = require('bcryptjs');
 
+// Safely extract configuration with environment variable fallback
+const dbConfig = {
+    database: process.env.DB_NAME || config.database,
+    username: process.env.DB_USER || config.username,
+    password: process.env.DB_PASSWORD || config.password,
+    server: process.env.DB_SERVER || config.server
+};
+
 // Initialize SQL Server database
-const sequelize = new Sequelize(config.database, config.username, config.password, {
-    host: config.server,
+const sequelize = new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {
+    host: dbConfig.server,
     port: 1433, // Explicitly set port for MSSQL
     dialect: 'mssql',
     dialectOptions: {
@@ -21,7 +29,7 @@ const sequelize = new Sequelize(config.database, config.username, config.passwor
         acquire: 30000,
         idle: 10000
     },
-    logging: false
+    logging: console.log  // Change logging to log actual database queries for debugging
 });
 
 const db = {};
@@ -163,8 +171,8 @@ db.initialize = async () => {
         process.env.NODE_ENV = process.env.NODE_ENV || 'development';
         
         console.log('Environment:', process.env.NODE_ENV);
-        console.log('Database Server:', config.server);
-        console.log('Database Name:', config.database);
+        console.log('Database Server:', dbConfig.server);
+        console.log('Database Name:', dbConfig.database);
         
         // Test the connection
         await sequelize.authenticate();
