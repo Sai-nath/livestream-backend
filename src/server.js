@@ -7,34 +7,44 @@ const apiRoutes = require('./routes/api.routes');
 
 const app = express();
 
-// Get allowed origin from environment variable
-const getAllowedOrigin = () => {
-    const origins = [process.env.FRONTEND_URL];
-    if (process.env.WEBSITE_CORS_ALLOWED_ORIGINS) {
-        origins.push(...process.env.WEBSITE_CORS_ALLOWED_ORIGINS.split(','));
-    }
-    console.log('=== CORS Configuration ===');
-    console.log('Allowed Origins:', origins);
-    console.log('========================');
-    return origins;
-};
-
-// CORS Configuration
-app.use(cors({
-    origin: getAllowedOrigin(),
+// CORS configuration
+const corsOptions = {
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            'http://localhost:3000',
+            'http://192.168.8.120:3000',
+            'https://localhost:3000',
+            'https://192.168.8.120:3000'
+        ];
+        
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('Origin not allowed by CORS:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
     credentials: true,
     preflightContinue: false,
     optionsSuccessStatus: 204
-}));
+};
+
+// Apply CORS to all routes
+app.use(cors(corsOptions));
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Pre-flight requests
-app.options('*', cors());
+// Handle preflight requests for all routes
+app.options('*', cors(corsOptions));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -50,7 +60,7 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: getAllowedOrigin()
+            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000']
         }
     });
 });
@@ -96,7 +106,7 @@ const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
 
 server.listen(PORT, () => {
     console.log(`Server is running on ${HOST}:${PORT}`);
-    console.log('CORS origins:', getAllowedOrigin());
+    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000']);
     console.log('Environment:', process.env.NODE_ENV);
 });
 

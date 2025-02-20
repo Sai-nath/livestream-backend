@@ -117,12 +117,20 @@ const updateUserStatus = async (userId, isOnline) => {
 const initializeSocket = (server) => {
     io = require('socket.io')(server, {
         cors: {
-            origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-            methods: ['GET', 'POST'],
+            origin: [
+                'http://localhost:3000',
+                'http://192.168.8.120:3000',
+                'https://localhost:3000',
+                'https://192.168.8.120:3000'
+            ],
+            methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
             credentials: true
         },
-        pingTimeout: 60000,
-        pingInterval: 25000
+        pingTimeout: 60000, // Increase ping timeout to 60 seconds
+        pingInterval: 25000, // Send ping every 25 seconds
+        connectTimeout: 30000, // Connection timeout
+        transports: ['websocket', 'polling']
     });
 
     io.use(async (socket, next) => {
@@ -163,6 +171,16 @@ const initializeSocket = (server) => {
     io.on('connection', (socket) => {
         console.log(`Socket connected: ${socket.id} for user: ${socket.userId}`);
         console.log(`Active connections for user ${socket.userId}:`, userSockets.get(socket.userId).size);
+
+        // Handle ping to keep connection alive
+        socket.on('ping', async () => {
+            const user = onlineUsers.get(socket.userId);
+            if (user) {
+                user.lastActivity = new Date();
+                await updateUserStatus(socket.userId, true);
+            }
+            socket.emit('pong');
+        });
 
         // Handle heartbeat to track user activity
         socket.on('heartbeat', async () => {
@@ -496,6 +514,46 @@ const initializeSocket = (server) => {
             }
         });
 
+        // Handle chat messages
+        socket.on('chat_message', ({ callId, role, message, timestamp }) => {
+            try {
+                console.log('Received chat message:', { callId, role, message });
+                
+                // Find all sockets in the same call
+                const callSockets = Array.from(io.sockets.sockets.values())
+                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+
+                // Broadcast message to all other sockets in the call
+                callSockets.forEach(s => {
+                    console.log('Sending chat message to:', s.id);
+                    s.emit('chat_message', { role, message, timestamp });
+                });
+            } catch (error) {
+                console.error('Error handling chat message:', error);
+            }
+        });
+
+        // Handle mute status
+        socket.on('participant_muted', (data) => {
+            const { callId, isMuted } = data;
+            socket.to(callId).emit('participant_muted', { role: socket.role, isMuted });
+        });
+
+        // Handle call rejoin after refresh
+        socket.on('rejoin_call', ({ callId, role }) => {
+            console.log(`User ${socket.id} rejoining call ${callId} as ${role}`);
+            
+            // Update socket data
+            socket.callId = callId;
+            socket.role = role;
+            
+            // Join room
+            socket.join(callId);
+            
+            // Notify others
+            socket.to(callId).emit('participant_rejoined', { role });
+        });
+
         // Handle disconnect
         socket.on('disconnect', async () => {
             try {
@@ -530,60 +588,26 @@ const initializeSocket = (server) => {
         });
 
         // Handle ping to keep connection alive
-        socket.on('ping', async () => {
-            const user = onlineUsers.get(socket.userId);
-            if (user) {
-                user.lastActivity = new Date();
-                await updateUserStatus(socket.userId, true);
-            }
-            socket.emit('pong');
-        });
-
-        // Handle claim assignment
-        socket.on('assignClaim', async (data) => {
-            try {
-                const { claimId, investigatorId } = data;
-                
-                // Update claim in database
-                await db.sequelize.query(
-                    `UPDATE Claims 
-                     SET InvestigatorId = :investigatorId,
-                         ClaimStatus = 'Assigned',
-                         assignedAt = GETDATE(),
-                         updatedAt = GETDATE()
-                     WHERE ClaimId = :claimId`,
-                    {
-                        replacements: { 
-                            investigatorId: investigatorId,
-                            claimId: claimId
-                        },
-                        type: QueryTypes.UPDATE
-                    }
-                );
-
-                // Notify relevant users
-                const investigatorSocket = [...io.sockets.sockets.values()]
-                    .find(s => s.userId === investigatorId);
-                
-                if (investigatorSocket) {
-                    investigatorSocket.emit('claimAssigned', data);
-                }
-            } catch (error) {
-                console.error('Error assigning claim:', error);
+        socket.on('ping_call', ({ callId }) => {
+            const call = socket.callRequest;
+            if (call) {
+                socket.emit('pong_call', { callId });
             }
         });
 
-        // Clean up inactive users periodically (every minute)
-        setInterval(async () => {
-            const now = new Date();
-            for (const [userId, user] of onlineUsers.entries()) {
-                const inactiveTime = now - user.lastActivity;
-                if (inactiveTime > 5 * 60 * 1000) { // 5 minutes of inactivity
-                    await updateUserStatus(userId, false);
-                    onlineUsers.delete(userId);
+        // Handle explicit call end
+        socket.on('end_call', ({ callId }) => {
+            const call = socket.callRequest;
+            if (call) {
+                // Notify all participants
+                io.to(callId).emit('call_ended');
+                
+                // Cleanup call data
+                for (const participantId of call.participants) {
+                    socket.callRequest = null;
                 }
             }
-        }, 60000);
+        });
     });
 };
 

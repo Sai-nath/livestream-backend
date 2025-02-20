@@ -1,16 +1,15 @@
 const { Sequelize, DataTypes } = require('sequelize');
+const config = require('../../config/config.json')[process.env.NODE_ENV || 'development'];
+const bcrypt = require('bcryptjs');
 
 // Initialize SQL Server database
-const sequelize = new Sequelize({
+const sequelize = new Sequelize(config.database, config.username, config.password, {
+    host: config.server,
+    port: 1433, // Explicitly set port for MSSQL
     dialect: 'mssql',
-    host: 'insurenexcore.database.windows.net',
-    port: 1433,
-    database: 'LiveStreaming',
-    username: 'saiadmin',
-    password: 'Sainath@518181',
     dialectOptions: {
         options: {
-            encrypt: true,
+            encrypt: true, // For Azure SQL
             trustServerCertificate: true,
             enableArithAbort: true,
             validateBulkLoadParameters: true
@@ -160,6 +159,13 @@ db.Claim.belongsTo(db.User, { as: 'supervisor', foreignKey: 'SupervisorId' });
 // Initialize database
 db.initialize = async () => {
     try {
+        // Set environment if not set
+        process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+        
+        console.log('Environment:', process.env.NODE_ENV);
+        console.log('Database Server:', config.server);
+        console.log('Database Name:', config.database);
+        
         // Test the connection
         await sequelize.authenticate();
         console.log('Database connection established successfully');
@@ -176,7 +182,7 @@ db.initialize = async () => {
                 {
                     name: 'Supervisor',
                     email: 'supervisor@test.com',
-                    password: 'password',
+                    password: await bcrypt.hash('password', 10),
                     role: 'SUPERVISOR',
                     status: 'ACTIVE',
                     createdAt: new Date()
@@ -184,7 +190,7 @@ db.initialize = async () => {
                 {
                     name: 'Investigator 1',
                     email: 'investigator1@test.com',
-                    password: 'password',
+                    password: await bcrypt.hash('password', 10),
                     role: 'INVESTIGATOR',
                     status: 'ACTIVE',
                     createdAt: new Date()
@@ -192,29 +198,16 @@ db.initialize = async () => {
                 {
                     name: 'Investigator 2',
                     email: 'investigator2@test.com',
-                    password: 'password',
+                    password: await bcrypt.hash('password', 10),
                     role: 'INVESTIGATOR',
                     status: 'ACTIVE',
                     createdAt: new Date()
                 }
             ]);
-
-            // Create test claims
-            await db.Claim.bulkCreate([
-                {
-                    ClaimNumber: `CLM-${Date.now()}-001`,
-                    VehicleNumber: 'ABC123',
-                    VehicleType: 'Toyota Camry 2020',
-                    PolicyNumber: 'POL-001',
-                    ClaimStatus: 'New',
-                    SupervisorId: 1,
-                    CreatedAt: new Date(),
-                    SupervisorNotes: 'Initial claim'
-                }
-            ]);
+            console.log('Test users created');
         }
     } catch (error) {
-        console.error('Failed to connect to database:', error);
+        console.error('Database initialization error:', error);
         throw error;
     }
 };
