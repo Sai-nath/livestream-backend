@@ -10,32 +10,42 @@ const app = express();
 // CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
-        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || '').split(',').filter(Boolean);
-        
-        // Always include the frontend URL if specified
+        // Parse allowed origins from environment variable
+        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || '')
+            .split(',')
+            .map(origin => origin.trim())
+            .filter(Boolean);
+
+        // Add frontend URL if specified
         if (process.env.FRONTEND_URL) {
             allowedOrigins.push(process.env.FRONTEND_URL);
         }
-        
-        // Default fallback origins for development
+
+        // Default development origins
         const defaultOrigins = [
-            'http://localhost:3000',
-            'https://localhost:3000',
-            'http://192.168.8.120:3000',
+            'http://localhost:3000', 
+            'https://localhost:3000', 
+            'http://192.168.8.120:3000', 
             'https://192.168.8.120:3000'
         ];
-        
+
+        // Combine and deduplicate origins
         const combinedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
-        
+
+        console.log('=== CORS Configuration ===');
+        console.log('Allowed Origins:', combinedOrigins);
+        console.log('Incoming Origin:', origin);
+        console.log('========================');
+
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) {
             return callback(null, true);
         }
         
-        if (combinedOrigins.indexOf(origin) !== -1) {
+        if (combinedOrigins.includes(origin)) {
             callback(null, true);
         } else {
-            console.log('Origin not allowed by CORS:', origin);
+            console.warn('Origin not allowed by CORS:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },

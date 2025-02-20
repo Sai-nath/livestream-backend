@@ -7,8 +7,8 @@
     "node": ">=21.0.0"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "start": "node -r dotenv/config src/index.js dotenv_config_path=.env.production",
+    "dev": "nodemon -r dotenv/config src/index.js dotenv_config_path=.env.development",
     "init-db": "node src/config/db-init.js",
     "init-users": "node src/scripts/init-users.js",
     "init-activities": "node src/scripts/create-activities-table.js",

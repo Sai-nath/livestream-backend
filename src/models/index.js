@@ -1,36 +1,53 @@
+const path = require('path');
+const fs = require('fs');
 const { Sequelize, DataTypes } = require('sequelize');
-const config = require('../../config/config.json')[process.env.NODE_ENV || 'development'];
 const bcrypt = require('bcryptjs');
 
-// Safely extract configuration with environment variable fallback
-const dbConfig = {
-    database: process.env.DB_NAME || config.database,
-    username: process.env.DB_USER || config.username,
-    password: process.env.DB_PASSWORD || config.password,
-    server: process.env.DB_SERVER || config.server
+// Log all environment variables for debugging
+console.log('=== Database Environment Variables ===');
+console.log('DB_SERVER:', process.env.DB_SERVER);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD ? '[REDACTED]' : 'NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('Current Working Directory:', process.cwd());
+console.log('__dirname:', __dirname);
+console.log('========================');
+
+// Fallback configuration if environment variables are not set
+const fallbackConfig = {
+    database: 'LiveStreaming',
+    username: 'saiadmin',
+    password: 'Sainath@518181',
+    server: 'insurenexcore.database.windows.net'
 };
 
 // Initialize SQL Server database
-const sequelize = new Sequelize(dbConfig.database, dbConfig.username, dbConfig.password, {
-    host: dbConfig.server,
-    port: 1433, // Explicitly set port for MSSQL
-    dialect: 'mssql',
-    dialectOptions: {
-        options: {
-            encrypt: true, // For Azure SQL
-            trustServerCertificate: true,
-            enableArithAbort: true,
-            validateBulkLoadParameters: true
-        }
-    },
-    pool: {
-        max: 5,
-        min: 0,
-        acquire: 30000,
-        idle: 10000
-    },
-    logging: console.log  // Change logging to log actual database queries for debugging
-});
+const sequelize = new Sequelize(
+    process.env.DB_NAME || fallbackConfig.database, 
+    process.env.DB_USER || fallbackConfig.username, 
+    process.env.DB_PASSWORD || fallbackConfig.password, 
+    {
+        host: process.env.DB_SERVER || fallbackConfig.server,
+        port: 1433,
+        dialect: 'mssql',
+        dialectOptions: {
+            options: {
+                encrypt: true,
+                trustServerCertificate: true,
+                enableArithAbort: true,
+                validateBulkLoadParameters: true
+            }
+        },
+        pool: {
+            max: 5,
+            min: 0,
+            acquire: 30000,
+            idle: 10000
+        },
+        logging: console.log  // Log SQL queries for debugging
+    }
+);
 
 const db = {};
 
@@ -171,8 +188,8 @@ db.initialize = async () => {
         process.env.NODE_ENV = process.env.NODE_ENV || 'development';
         
         console.log('Environment:', process.env.NODE_ENV);
-        console.log('Database Server:', dbConfig.server);
-        console.log('Database Name:', dbConfig.database);
+        console.log('Database Server:', process.env.DB_SERVER || fallbackConfig.server);
+        console.log('Database Name:', process.env.DB_NAME || fallbackConfig.database);
         
         // Test the connection
         await sequelize.authenticate();

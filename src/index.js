@@ -1,7 +1,9 @@
 require('dotenv').config({
-    path: process.env.NODE_ENV === 'development' 
-        ? '.env.development'
-        : '.env'
+    path: process.env.NODE_ENV === 'production' 
+        ? '.env.production'
+        : (process.env.NODE_ENV === 'development' 
+            ? '.env.development' 
+            : '.env')
 });
 const server = require('./server');
 
@@ -19,6 +21,16 @@ console.log('Database Server:', process.env.DB_SERVER);
 console.log('Database Name:', process.env.DB_NAME);
 console.log('Current Directory:', process.cwd());
 console.log('========================');
+
+console.log('=== Environment File ===');
+console.log('Loaded Env File:', 
+    process.env.NODE_ENV === 'production' 
+        ? '.env.production'
+        : (process.env.NODE_ENV === 'development' 
+            ? '.env.development' 
+            : '.env')
+);
+console.log('=====================');
 
 // Global error handlers
 process.on('uncaughtException', (error) => {
