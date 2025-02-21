@@ -184,16 +184,24 @@ router.get('/claims/assigned', verifyToken, async (req, res) => {
             }
         );
 
+        // Log the first raw claim from the database
+        console.log('Raw claim from database:');
+        console.log(JSON.stringify(claims[0], null, 2));
+
         const formattedClaims = claims.map(claim => ({
             id: claim.id,
             claimId: claim.ClaimId,
             vehicleInfo: {
-                make: claim.VehicleMake,
-                model: claim.VehicleModel,
-                year: claim.VehicleYear,
-                registrationNumber: claim.VehicleRegNo
+                // Change these field names to match what's in your database
+                make: claim.VehicleType ? claim.VehicleType.split(' ')[0] : '',
+                model: claim.VehicleType ? claim.VehicleType.split(' ').slice(1).join(' ') : '',
+                registrationNumber: claim.VehicleNumber
             },
             claimDetails: {
+                // Add these fields from your database
+                policyNumber: claim.PolicyNumber,
+                insuredName: claim.InsuredName,
+                // Keep the existing fields
                 dateOfIncident: claim.IncidentDate,
                 location: claim.IncidentLocation,
                 description: claim.Description
@@ -214,6 +222,10 @@ router.get('/claims/assigned', verifyToken, async (req, res) => {
                 lastLogin: claim.SupervisorLastLogin
             } : null
         }));
+
+        // Log the first formatted claim
+        console.log('Formatted claim:');
+        console.log(JSON.stringify(formattedClaims[0], null, 2));
 
         res.json(formattedClaims);
     } catch (error) {

@@ -193,7 +193,43 @@ const initializeSocket = (server) => {
                 console.error('Error handling heartbeat:', error);
             }
         });
+// Add these handlers inside your io.on('connection', (socket) => { ... }) block
 
+// Handle recording status changes
+socket.on('recording_status', ({ callId, isRecording, startedBy, stoppedBy, timestamp }) => {
+    console.log(`Recording status change in call ${callId}: ${isRecording ? 'started' : 'stopped'}`);
+    
+    // Broadcast to all participants in the call
+    socket.to(callId).emit('recording_status', {
+      isRecording,
+      startedBy: isRecording ? startedBy : null,
+      stoppedBy: isRecording ? null : stoppedBy,
+      timestamp
+    });
+  });
+  
+  // Handle recording complete notification (when upload is done)
+  socket.on('recording_completed', ({ callId, recordingUrl, recordedBy }) => {
+    console.log(`Recording completed in call ${callId}`);
+    
+    // Broadcast to all participants that recording is available
+    io.to(callId).emit('recording_available', {
+      recordingUrl,
+      recordedBy,
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // Handle recording error
+  socket.on('recording_error', ({ callId, error }) => {
+    console.error(`Recording error in call ${callId}:`, error);
+    
+    // Notify all participants of the error
+    io.to(callId).emit('recording_error', {
+      message: error.message || 'An error occurred during recording',
+      timestamp: new Date().toISOString()
+    });
+  });
         // Handle investigation call request
         socket.on('investigation_call_request', async (data) => {
             try {
