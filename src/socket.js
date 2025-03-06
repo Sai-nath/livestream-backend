@@ -193,43 +193,121 @@ const initializeSocket = (server) => {
                 console.error('Error handling heartbeat:', error);
             }
         });
-// Add these handlers inside your io.on('connection', (socket) => { ... }) block
 
-// Handle recording status changes
-socket.on('recording_status', ({ callId, isRecording, startedBy, stoppedBy, timestamp }) => {
-    console.log(`Recording status change in call ${callId}: ${isRecording ? 'started' : 'stopped'}`);
-    
-    // Broadcast to all participants in the call
-    socket.to(callId).emit('recording_status', {
-      isRecording,
-      startedBy: isRecording ? startedBy : null,
-      stoppedBy: isRecording ? null : stoppedBy,
-      timestamp
-    });
-  });
-  
-  // Handle recording complete notification (when upload is done)
-  socket.on('recording_completed', ({ callId, recordingUrl, recordedBy }) => {
-    console.log(`Recording completed in call ${callId}`);
-    
-    // Broadcast to all participants that recording is available
-    io.to(callId).emit('recording_available', {
-      recordingUrl,
-      recordedBy,
-      timestamp: new Date().toISOString()
-    });
-  });
-  
-  // Handle recording error
-  socket.on('recording_error', ({ callId, error }) => {
-    console.error(`Recording error in call ${callId}:`, error);
-    
-    // Notify all participants of the error
-    io.to(callId).emit('recording_error', {
-      message: error.message || 'An error occurred during recording',
-      timestamp: new Date().toISOString()
-    });
-  });
+        // Add these handlers inside your io.on('connection', (socket) => { ... }) block
+
+        // Handle recording status changes
+        socket.on('recording_status', ({ callId, isRecording, startedBy, stoppedBy, timestamp }) => {
+            console.log(`Recording status change in call ${callId}: ${isRecording ? 'started' : 'stopped'}`);
+            
+            // Broadcast to all participants in the call
+            socket.to(callId).emit('recording_status', {
+              isRecording,
+              startedBy: isRecording ? startedBy : null,
+              stoppedBy: isRecording ? null : stoppedBy,
+              timestamp
+            });
+          });
+          
+          // Handle recording complete notification (when upload is done)
+          socket.on('recording_completed', ({ callId, recordingUrl, recordedBy }) => {
+            console.log(`Recording completed in call ${callId}`);
+            
+            // Broadcast to all participants that recording is available
+            io.to(callId).emit('recording_available', {
+              recordingUrl,
+              recordedBy,
+              timestamp: new Date().toISOString()
+            });
+          });
+        
+          socket.on('save_screenshot', async (data) => {
+            const { 
+                callId, 
+                timestamp, 
+                location, 
+                capturedBy, 
+                claimNumber,
+                s3Url, // S3 URL from successful upload
+                screenshot // Fallback for when s3Url is not provided
+            } = data;
+        
+            try {
+                // Generate a unique media ID
+                const mediaId = Date.now().toString();
+                
+                // Parse and format the timestamp properly for SQL Server
+                // Convert ISO string to a Date object
+                const date = new Date(timestamp);
+                
+                // Format in SQL Server compatible format (YYYY-MM-DD HH:MM:SS.mmm)
+                const formattedDate = date.toISOString().replace('T', ' ').replace('Z', '');
+                
+                // Insert screenshot reference using Sequelize query
+                await db.sequelize.query(
+                    `INSERT INTO StreamMedia (
+                        CallId, 
+                        MediaId, 
+                        MediaType, 
+                        MediaUrl, 
+                        Timestamp, 
+                        Latitude,
+                        Longitude,
+                        Accuracy,
+                        CapturedBy, 
+                        ClaimNumber, 
+                        Resolution
+                    ) VALUES (
+                        :callId, 
+                        :mediaId, 
+                        :mediaType, 
+                        :mediaUrl, 
+                        :timestamp, 
+                        :latitude,
+                        :longitude,
+                        :accuracy,
+                        :capturedBy, 
+                        :claimNumber, 
+                        :resolution
+                    )`,
+                    {
+                        replacements: {
+                            callId,
+                            mediaId,
+                            mediaType: 'screenshot',
+                            mediaUrl: s3Url || screenshot, // Use S3 URL if available, otherwise use data URL
+                            timestamp: formattedDate, // Formatted date string
+                            latitude: location?.latitude || null,
+                            longitude: location?.longitude || null,
+                            accuracy: location?.accuracy || null,
+                            capturedBy,
+                            claimNumber: claimNumber || null,
+                            resolution: location 
+                                ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` 
+                                : 'N/A'
+                        },
+                        type: db.Sequelize.QueryTypes.INSERT
+                    }
+                );
+        
+                // Emit success event
+                socket.emit('screenshot_saved', {
+                    callId,
+                    mediaId,
+                    message: 'Screenshot saved successfully'
+                });
+        
+            } catch (error) {
+                console.error('Error storing screenshot details:', error);
+                
+                // Emit error event
+                socket.emit('screenshot_save_error', {
+                    callId,
+                    message: 'Failed to save screenshot',
+                    error: error.message
+                });
+            }
+        });
         // Handle investigation call request
         socket.on('investigation_call_request', async (data) => {
             try {
@@ -508,16 +586,6 @@ socket.on('recording_status', ({ callId, isRecording, startedBy, stoppedBy, time
                 s.emit('call_ended');
                 s.callRequest = null;
             });
-        });
-
-        socket.on('save_screenshot', async ({ callId, screenshot, timestamp }) => {
-            try {
-                // Save screenshot to database or file system
-                // TODO: Implement screenshot storage
-                console.log('Screenshot saved:', { callId, timestamp });
-            } catch (error) {
-                console.error('Error saving screenshot:', error);
-            }
         });
 
         // Handle claim status update
