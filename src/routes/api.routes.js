@@ -358,4 +358,66 @@ router.post('/claims/:claimId/assign', verifyToken, async (req, res) => {
     }
 });
 
+// Update claim status after livestream completion
+router.post('/claims/:claimId/submit', verifyToken, async (req, res) => {
+    try {
+        const { claimId } = req.params;
+        const { recordingUrl, notes } = req.body;
+
+        if (!claimId) {
+            return res.status(400).json({ message: 'Claim ID is required' });
+        }
+
+        // Update claim status to submitted
+        await db.sequelize.query(
+            `UPDATE Claims 
+             SET ClaimStatus = 'Submitted',
+                 RecordingUrl = :recordingUrl,
+                 InvestigatorNotes = CASE 
+                    WHEN InvestigatorNotes IS NULL THEN :notes
+                    ELSE InvestigatorNotes + CHAR(13) + CHAR(10) + :notes
+                 END,
+                 SubmittedAt = GETDATE()
+             WHERE ClaimId = :claimId`,
+            {
+                replacements: { 
+                    claimId,
+                    recordingUrl: recordingUrl || null,
+                    notes: notes || 'Investigation completed via video call.'
+                },
+                type: QueryTypes.UPDATE
+            }
+        );
+
+        // Get updated claim details
+        const [updatedClaim] = await db.sequelize.query(
+            `SELECT c.*, 
+                    i.name as InvestigatorName,
+                    s.name as SupervisorName
+             FROM Claims c
+             LEFT JOIN Users i ON c.InvestigatorId = i.id
+             LEFT JOIN Users s ON c.SupervisorId = s.id
+             WHERE c.ClaimId = :claimId`,
+            {
+                replacements: { claimId },
+                type: QueryTypes.SELECT
+            }
+        );
+
+        // Emit socket event for real-time update
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('claim_submitted', {
+                claimId,
+                claim: updatedClaim
+            });
+        }
+
+        res.json(updatedClaim);
+    } catch (error) {
+        console.error('Submit claim error:', error);
+        res.status(500).json({ message: 'Error submitting claim', error: error.message });
+    }
+});
+
 module.exports = router;

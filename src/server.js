@@ -11,7 +11,7 @@ const app = express();
 const corsOptions = {
     origin: function (origin, callback) {
         // Parse allowed origins from environment variable
-        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || '')
+        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || 'https://192.168.8.150:3000')
             .split(',')
             .map(origin => origin.trim())
             .filter(Boolean);
@@ -25,8 +25,9 @@ const corsOptions = {
         const defaultOrigins = [
             'http://localhost:3000', 
             'https://localhost:3000', 
-            'http://192.168.8.120:3000', 
-            'https://192.168.8.120:3000'
+            'http://192.168.8.150:3000', 
+            'https://192.168.8.150:5000',
+            'http://localhost:5000'
         ];
 
         // Combine and deduplicate origins
@@ -80,7 +81,7 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net','https://nice-sea-057f1c900.4.azurestaticapps.net']
+            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net','https://nice-sea-057f1c900.4.azurestaticapps.net']
         }
     });
 });
@@ -126,7 +127,7 @@ const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
 
 server.listen(PORT, () => {
     console.log(`Server is running on ${HOST}:${PORT}`);
-    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.120:3000', 'https://localhost:3000', 'https://192.168.8.120:3000', 'https://nice-sea-057f1c900.4.azurestaticapps.net']);
+    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://nice-sea-057f1c900.4.azurestaticapps.net']);
     console.log('Environment:', process.env.NODE_ENV);
 });
 
