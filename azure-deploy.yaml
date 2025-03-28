@@ -1,0 +1,60 @@
+version: 1.0
+name: livestreaming-backend
+type: azure-app-service
+
+# Azure App Service Configuration
+app_service:
+  name: livestreaming
+  region: centralindia
+  sku: Standard
+  os: windows
+  runtime: node
+  runtime_version: "21.x"
+
+# Deployment Configuration
+deployment:
+  type: web_deploy
+  scm_url: livestreaming-fjghamgvdsdbd7ct.scm.centralindia-01.azurewebsites.net:443
+  username: $livestreaming
+  # Note: Password is stored securely and not included in this file
+  site_name: livestreaming
+  destination_url: https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net
+
+# Alternative Deployment Methods
+alternative_deployments:
+  - type: ftp
+    url: ftps://waws-prod-pn1-037.ftp.azurewebsites.windows.net/site/wwwroot
+    passive_mode: true
+    username: livestreaming\$livestreaming
+    # Note: Password is stored securely and not included in this file
+  
+  - type: zip_deploy
+    url: livestreaming-fjghamgvdsdbd7ct.scm.centralindia-01.azurewebsites.net:443
+    username: $livestreaming
+    # Note: Password is stored securely and not included in this file
+
+# Application Configuration
+app_settings:
+  # Server Configuration
+  PORT: 5000
+  NODE_ENV: production
+  WEBSITE_NODE_DEFAULT_VERSION: "21.x"
+  WEBSITE_WEBSOCKET_ENABLED: 1
+  
+  # Frontend URL (CORS)
+  FRONTEND_URL: https://nice-sea-057f1c900.4.azurestaticapps.net
+  WEBSITE_CORS_ALLOWED_ORIGINS: https://nice-sea-057f1c900.4.azurestaticapps.net
+  
+  # Database Configuration
+  DB_SERVER: insurenexcore.database.windows.net
+  DB_NAME: LiveStreaming
+  DB_USER: saiadmin
+  # Note: DB_PASSWORD is stored securely and not included in this file
+
+# Build Configuration
+build:
+  command: npm run build
+  output_directory: ./
+
+# Startup Command
+startup_command: npm start
