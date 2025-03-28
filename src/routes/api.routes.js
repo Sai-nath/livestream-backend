@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const config = require('../config/auth');
 const db = require('../models');
-const { QueryTypes } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const router = express.Router();
 
 // Middleware to verify JWT token
@@ -237,7 +237,14 @@ router.get('/claims/assigned', verifyToken, async (req, res) => {
 // Create new claim
 router.post('/claims', verifyToken, async (req, res) => {
     try {
-        const { claimNumber } = req.body;
+        const { 
+            claimNumber, 
+            vehicleNumber, 
+            vehicleType, 
+            policyNumber, 
+            insuredName, 
+            supervisorNotes 
+        } = req.body;
         const supervisorId = req.user.id;
 
         // Format the date in SQL Server compatible format
@@ -245,19 +252,25 @@ router.post('/claims', verifyToken, async (req, res) => {
 
         const [claim] = await db.sequelize.query(
             `INSERT INTO Claims 
-             (ClaimNumber, ClaimStatus, SupervisorId, CreatedAt) 
+             (ClaimNumber, ClaimStatus, SupervisorId, CreatedAt, VehicleNumber, VehicleType, PolicyNumber, InsuredName, SupervisorNotes) 
              OUTPUT INSERTED.*
-             VALUES (:claimNumber, 'New', :supervisorId, :createdAt)`,
+             VALUES (:claimNumber, 'New', :supervisorId, :createdAt, :vehicleNumber, :vehicleType, :policyNumber, :insuredName, :supervisorNotes)`,
             {
                 replacements: {
-                    claimNumber,
+                    claimNumber: claimNumber || `CLM-${Date.now()}`,
                     supervisorId,
-                    createdAt: currentDate
+                    createdAt: currentDate,
+                    vehicleNumber: vehicleNumber || null,
+                    vehicleType: vehicleType || null,
+                    policyNumber: policyNumber || null,
+                    insuredName: insuredName || null,
+                    supervisorNotes: supervisorNotes || null
                 },
                 type: QueryTypes.INSERT
             }
         );
 
+        console.log('Created claim:', claim);
         res.status(201).json(claim);
     } catch (error) {
         console.error('Create claim error:', error);
@@ -328,7 +341,6 @@ router.post('/claims/:claimId/assign', verifyToken, async (req, res) => {
                     c.PolicyNumber, c.InsuredName, c.ClaimStatus, 
                     c.SupervisorId, c.InvestigatorId, c.CreatedAt, 
                     c.AssignedAt, c.CompletedAt, c.ClosedAt,
-                    c.SupervisorNotes, c.InvestigatorNotes,
                     u1.name as supervisorName, u1.email as supervisorEmail,
                     u2.name as investigatorName, u2.email as investigatorEmail
              FROM Claims c
@@ -417,6 +429,562 @@ router.post('/claims/:claimId/submit', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Submit claim error:', error);
         res.status(500).json({ message: 'Error submitting claim', error: error.message });
+    }
+});
+
+// Update claim status after livestreaming ends
+router.put('/claims/:claimId/livestream-completed', verifyToken, async (req, res) => {
+    try {
+        const { claimId } = req.params;
+        
+        console.log(`Updating claim status for claim ID: ${claimId}`);
+        
+        // Check if claim exists
+        const [claims] = await db.sequelize.query(
+            `SELECT ClaimId, ClaimStatus FROM Claims WHERE ClaimId = :claimId`,
+            {
+                replacements: { claimId },
+                type: QueryTypes.SELECT
+            }
+        );
+        
+        if (!claims || claims.length === 0) {
+            console.error(`Claim with ID ${claimId} not found`);
+            return res.status(404).json({ error: 'Claim not found' });
+        }
+        
+        console.log(`Current claim status: ${claims[0]?.ClaimStatus}`);
+        
+        // Update claim status to InvestigationCompleted
+        const [updateResult] = await db.sequelize.query(
+            `UPDATE Claims 
+             SET ClaimStatus = 'InvestigationCompleted',
+                 UpdatedAt = GETDATE()
+             WHERE ClaimId = :claimId`,
+            {
+                replacements: { claimId },
+                type: QueryTypes.UPDATE
+            }
+        );
+        
+        console.log(`Update result:`, updateResult);
+        
+        // Verify the update
+        const [updatedClaims] = await db.sequelize.query(
+            `SELECT ClaimId, ClaimStatus FROM Claims WHERE ClaimId = :claimId`,
+            {
+                replacements: { claimId },
+                type: QueryTypes.SELECT
+            }
+        );
+        
+        console.log(`Updated claim status: ${updatedClaims[0]?.ClaimStatus}`);
+        
+        res.json({ 
+            message: 'Claim status updated successfully',
+            previousStatus: claims[0]?.ClaimStatus,
+            currentStatus: updatedClaims[0]?.ClaimStatus
+        });
+    } catch (error) {
+        console.error('Error updating claim status:', error);
+        res.status(500).json({ error: 'Failed to update claim status', details: error.message });
+    }
+});
+
+// Get videos for a specific claim
+router.get('/claims/:claimId/videos', verifyToken, async (req, res) => {
+    try {
+        const { claimId } = req.params;
+        
+        // Check if the claimId contains a date format (like 20250325-5650)
+        const isDateFormatted = /^\d{8}-\d+$/.test(claimId);
+        
+        // Construct the query based on the format of the claim ID
+        let queryCondition;
+        let replacements;
+        
+        if (isDateFormatted) {
+            // If it's a date-formatted claim number, search by ClaimNumber
+            queryCondition = 'c.ClaimNumber = :claimNumber';
+            replacements = { claimNumber: claimId };
+        } else {
+            // Otherwise, assume it's a numeric ClaimId
+            queryCondition = 'c.ClaimId = :claimId';
+            replacements = { claimId: claimId };
+        }
+
+        // Fetch video records using the appropriate condition
+        const videos = await db.sequelize.query(
+            `SELECT sm.*
+             FROM StreamMedia sm
+             INNER JOIN Claims c ON sm.ClaimNumber = c.ClaimNumber
+             WHERE ${queryCondition}
+             AND sm.MediaType = 'video'
+             ORDER BY sm.Timestamp DESC`,
+            {
+                replacements: replacements,
+                type: db.Sequelize.QueryTypes.SELECT
+            }
+        );
+
+        // Include the original S3 URL for pre-signed URL generation
+        const modifiedVideos = videos.map(video => ({
+            ...video,
+            OriginalMediaUrl: video.MediaUrl,   // Store original URL separately
+            MediaUrl: video.MediaUrl            // Use same URL (preserve for pre-signed URL handling)
+        }));
+
+        res.json(modifiedVideos);
+
+    } catch (error) {
+        console.error('Error fetching videos:', error);
+        res.status(500).json({ error: 'Failed to fetch videos' });
+    }
+});
+
+
+// Get screenshots for a specific claim
+router.get('/claims/:claimId/screenshots', verifyToken, async (req, res) => {
+    try {
+        const { claimId } = req.params;
+        
+        // Check if the claimId contains a date format (like 20250325-5650)
+        const isDateFormatted = /^\d{8}-\d+$/.test(claimId);
+        
+        // Construct the query based on the format of the claim ID
+        let queryCondition;
+        let replacements;
+        
+        if (isDateFormatted) {
+            // If it's a date-formatted claim number, search by ClaimNumber
+            queryCondition = 'c.ClaimNumber = :claimNumber';
+            replacements = { claimNumber: claimId };
+        } else {
+            // Otherwise, assume it's a numeric ClaimId
+            queryCondition = 'c.ClaimId = :claimId';
+            replacements = { claimId: claimId };
+        }
+
+        // Fetch screenshot records using the appropriate condition
+        const screenshots = await db.sequelize.query(
+            `SELECT sm.*
+             FROM StreamMedia sm
+             INNER JOIN Claims c ON sm.ClaimNumber = c.ClaimNumber
+             WHERE ${queryCondition}
+             AND sm.MediaType = 'screenshot'
+             ORDER BY sm.Timestamp DESC`,
+            {
+                replacements: replacements,
+                type: db.Sequelize.QueryTypes.SELECT
+            }
+        );
+
+        // Include the original S3 URL for pre-signed URL generation
+        const modifiedScreenshots = screenshots.map(screenshot => ({
+            ...screenshot,
+            OriginalMediaUrl: screenshot.MediaUrl,  // Store original URL separately
+            MediaUrl: screenshot.MediaUrl           // Use same URL (preserve for pre-signed URL handling)
+        }));
+
+        res.json(modifiedScreenshots);
+
+    } catch (error) {
+        console.error('Error fetching screenshots:', error);
+        res.status(500).json({ error: 'Failed to fetch screenshots' });
+    }
+});
+
+// Add a proxy endpoint to fetch media from S3
+router.get('/media/proxy', async (req, res) => {
+    try {
+        const { url, token } = req.query;
+        
+        console.log('Media proxy request:', { url });
+        
+        if (!url) {
+            return res.status(400).json({ message: 'URL parameter is required' });
+        }
+        
+        // Verify token if provided, but make it optional
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                req.user = decoded;
+                console.log('Token verified successfully');
+            } catch (err) {
+                console.log('Invalid token in proxy request:', err.message);
+                // Continue without authentication
+            }
+        }
+        
+        // Use a simpler approach - just forward the request directly to S3
+        const fetch = require('node-fetch');
+        
+        console.log('Making direct request to:', url);
+        
+        // Make the request directly to the URL
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            console.error('Request failed:', { 
+                status: response.status, 
+                statusText: response.statusText 
+            });
+            return res.status(response.status).json({ 
+                message: `Failed to fetch media: ${response.statusText}` 
+            });
+        }
+        
+        // Get content type and set appropriate headers
+        const contentType = response.headers.get('content-type');
+        if (contentType) {
+            res.setHeader('Content-Type', contentType);
+            console.log('Setting content type:', contentType);
+        }
+        
+        // Set additional headers to prevent caching issues
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        
+        console.log('Streaming response to client');
+        
+        // Stream the response to the client
+        response.body.pipe(res);
+        
+    } catch (error) {
+        console.error('Media proxy error:', error);
+        res.status(500).json({ message: error.message, stack: error.stack });
+    }
+});
+
+// Download media directly from S3
+router.get('/media/download/:mediaId', async (req, res) => {
+    try {
+        const { mediaId } = req.params;
+        const { token } = req.query;
+        
+        console.log('Media download request for ID:', mediaId);
+        
+        // Verify token if provided
+        if (token) {
+            try {
+                // Use the same secret as the verifyToken middleware
+                const decoded = jwt.verify(token, config.secret);
+                req.user = decoded;
+                console.log('Token verified successfully');
+            } catch (err) {
+                console.log('Invalid token in download request:', err.message);
+                return res.status(401).json({ message: 'Invalid token' });
+            }
+        } else {
+            // Token is required
+            return res.status(401).json({ message: 'Authentication token is required' });
+        }
+        
+        // Fetch media record from StreamMedia table
+        const mediaRecord = await db.sequelize.query(
+            `SELECT * FROM StreamMedia WHERE MediaId = :mediaId`,
+            {
+                replacements: { mediaId },
+                type: db.Sequelize.QueryTypes.SELECT
+            }
+        );
+        
+        if (!mediaRecord || mediaRecord.length === 0) {
+            return res.status(404).json({ message: 'Media not found' });
+        }
+        
+        const media = mediaRecord[0];
+        const s3Url = media.MediaUrl;
+        
+        console.log('Media S3 URL:', s3Url);
+        
+        // Parse the S3 URL to get bucket and key
+        const s3UrlPattern = /https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/;
+        const match = s3Url.match(s3UrlPattern);
+        
+        if (!match) {
+            console.log('Invalid S3 URL format:', s3Url);
+            return res.status(400).json({ message: 'Invalid S3 URL format' });
+        }
+        
+        const [, bucket, region, key] = match;
+        console.log('Parsed S3 URL:', { bucket, region, key });
+        
+        // Load AWS SDK
+        const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+        
+        // Get AWS credentials from environment variables
+        const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+        const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+        const AWS_REGION = process.env.AWS_REGION || 'eu-north-1';
+        
+        // Check if AWS credentials are available
+        if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+            console.error('AWS credentials are not configured');
+            return res.status(500).json({ 
+                message: 'AWS credentials are not configured in the server environment' 
+            });
+        }
+        
+        console.log('Using AWS region:', AWS_REGION);
+        
+        // Create S3 client
+        const s3Client = new S3Client({
+            region: AWS_REGION,
+            credentials: {
+                accessKeyId: AWS_ACCESS_KEY_ID,
+                secretAccessKey: AWS_SECRET_ACCESS_KEY,
+            },
+        });
+        
+        // Create command to get object
+        const command = new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+        });
+        
+        try {
+            // Get the object from S3
+            const s3Response = await s3Client.send(command);
+            
+            // Set content type header
+            if (s3Response.ContentType) {
+                res.setHeader('Content-Type', s3Response.ContentType);
+            } else {
+                // Set default content type based on media type
+                res.setHeader('Content-Type', media.MediaType === 'video' ? 'video/webm' : 'image/jpeg');
+            }
+            
+            // Set content disposition header for download
+            const extension = media.MediaType === 'video' ? 'webm' : 'jpg';
+            const filename = `${media.MediaType}-${media.MediaId}.${extension}`;
+            res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+            
+            // Stream the response to the client
+            s3Response.Body.pipe(res);
+            
+        } catch (s3Error) {
+            console.error('Error getting object from S3:', s3Error);
+            return res.status(500).json({ 
+                message: 'Error retrieving media from S3', 
+                error: s3Error.message 
+            });
+        }
+        
+    } catch (error) {
+        console.error('Media download error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Generate pre-signed URL for S3 objects
+router.get('/media/presigned', verifyToken, async (req, res) => {
+    try {
+        const { s3Url } = req.query;
+        
+        if (!s3Url) {
+            return res.status(400).json({ message: 'S3 URL is required' });
+        }
+        
+        console.log('Generating pre-signed URL for:', s3Url);
+        
+        // Parse the S3 URL to get bucket and key
+        const s3UrlPattern = /https:\/\/([^.]+)\.s3\.([^.]+)\.amazonaws\.com\/(.+)/;
+        const match = s3Url.match(s3UrlPattern);
+        
+        if (!match) {
+            console.log('Invalid S3 URL format:', s3Url);
+            return res.status(400).json({ message: 'Invalid S3 URL format' });
+        }
+        
+        const [, bucket, region, key] = match;
+        console.log('Parsed S3 URL:', { bucket, region, key });
+        
+        // Load AWS SDK
+        const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+        const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+        
+        // Get AWS credentials from environment variables
+        const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+        const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+        const AWS_REGION = process.env.AWS_REGION || 'eu-north-1';
+        
+        // Check if AWS credentials are available
+        if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY) {
+            console.error('AWS credentials are not configured');
+            return res.status(500).json({ 
+                message: 'AWS credentials are not configured in the server environment' 
+            });
+        }
+        
+        console.log('Using AWS region:', AWS_REGION);
+        
+        // Create S3 client
+        const s3Client = new S3Client({
+            region: AWS_REGION,
+            credentials: {
+                accessKeyId: AWS_ACCESS_KEY_ID,
+                secretAccessKey: AWS_SECRET_ACCESS_KEY,
+            },
+        });
+        
+        // Create command to get object
+        const command = new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+        });
+        
+        // Generate pre-signed URL
+        const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        
+        res.json({ presignedUrl });
+    } catch (error) {
+        console.error('Pre-signed URL generation error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Get claim counts by status
+router.get('/claims/counts', verifyToken, async (req, res) => {
+    try {
+        // Get counts for each status
+        const counts = {
+            New: 0,
+            Assigned: 0,
+            Submitted: 0,
+            Closed: 0
+        };
+
+        // Query for New claims
+        const newClaimsQuery = `
+            SELECT COUNT(*) AS count 
+            FROM Claims 
+            WHERE ClaimStatus = 'New'
+        `;
+        const [newClaimsResult] = await db.sequelize.query(newClaimsQuery, { type: QueryTypes.SELECT });
+        counts.New = newClaimsResult.count;
+
+        // Query for Assigned claims
+        const assignedClaimsQuery = `
+            SELECT COUNT(*) AS count 
+            FROM Claims 
+            WHERE ClaimStatus = 'Assigned'
+        `;
+        const [assignedClaimsResult] = await db.sequelize.query(assignedClaimsQuery, { type: QueryTypes.SELECT });
+        counts.Assigned = assignedClaimsResult.count;
+
+        // Query for Submitted claims (InvestigationCompleted)
+        const submittedClaimsQuery = `
+            SELECT COUNT(*) AS count 
+            FROM Claims 
+            WHERE ClaimStatus = 'InvestigationCompleted'
+        `;
+        const [submittedClaimsResult] = await db.sequelize.query(submittedClaimsQuery, { type: QueryTypes.SELECT });
+        counts.Submitted = submittedClaimsResult.count;
+
+        // Query for Closed claims
+        const closedClaimsQuery = `
+            SELECT COUNT(*) AS count 
+            FROM Claims 
+            WHERE ClaimStatus = 'Closed'
+        `;
+        const [closedClaimsResult] = await db.sequelize.query(closedClaimsQuery, { type: QueryTypes.SELECT });
+        counts.Closed = closedClaimsResult.count;
+
+        console.log('Claim counts:', counts);
+        res.json(counts);
+    } catch (error) {
+        console.error('Error fetching claim counts:', error);
+        res.status(500).json({ 
+            message: 'Error fetching claim counts',
+            error: error.message 
+        });
+    }
+});
+
+// Search claims by claim number
+router.get('/claims/search', verifyToken, async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query) {
+            return res.status(400).json({ message: 'Search query is required' });
+        }
+        
+        console.log(`Searching for claims with query: ${query}`);
+        
+        // Search for claims that match the query in the claim number
+        const searchQuery = `
+            SELECT c.*, 
+                   s.Id as SupervisorId, s.Name as SupervisorName, s.Email as SupervisorEmail, s.IsOnline as SupervisorOnline, s.LastLogin as SupervisorLastLogin,
+                   i.Id as InvestigatorId, i.Name as InvestigatorName, i.Email as InvestigatorEmail
+            FROM Claims c
+            LEFT JOIN Users s ON c.SupervisorId = s.Id
+            LEFT JOIN Users i ON c.InvestigatorId = i.Id
+            WHERE c.ClaimNumber LIKE '%${query}%'
+            ORDER BY c.CreatedAt DESC
+        `;
+        
+        const claims = await db.sequelize.query(searchQuery, { type: QueryTypes.SELECT });
+        
+        if (claims.length === 0) {
+            return res.json([]);
+        }
+        
+        // Format the claims to match the expected structure
+        const formattedClaims = claims.map(claim => {
+            // Log the raw claim data to debug
+            console.log('Raw claim data:', claim);
+            
+            return {
+                id: claim.Id,
+                ClaimId: claim.ClaimId,  // Make sure this is included
+                claimNumber: claim.ClaimNumber,
+                createdAt: claim.CreatedAt,
+                vehicle: {
+                    number: claim.VehicleNumber || 'N/A',
+                    type: claim.VehicleType || 'N/A'
+                },
+                policy: {
+                    number: claim.PolicyNumber || 'N/A',
+                    insuredName: claim.InsuredName || 'N/A'
+                },
+                incident: {
+                    dateOfIncident: claim.IncidentDate,
+                    location: claim.IncidentLocation,
+                    description: claim.Description,
+                    supervisorNotes: claim.SupervisorNotes,
+                    investigatorNotes: claim.InvestigatorNotes
+                },
+                status: claim.ClaimStatus,
+                assignedAt: claim.AssignedAt,
+                investigationId: claim.InvestigationId,
+                investigator: claim.InvestigatorId ? {
+                    id: claim.InvestigatorId,
+                    name: claim.InvestigatorName,
+                    email: claim.InvestigatorEmail
+                } : null,
+                supervisor: claim.SupervisorId ? {
+                    id: claim.SupervisorId,
+                    name: claim.SupervisorName,
+                    email: claim.SupervisorEmail,
+                    isOnline: claim.SupervisorOnline,
+                    lastLogin: claim.SupervisorLastLogin,
+                    notes: claim.SupervisorNotes
+                } : null
+            };
+        });
+        
+        console.log(`Found ${formattedClaims.length} claims matching query: ${query}`);
+        res.json(formattedClaims);
+    } catch (error) {
+        console.error('Error searching claims:', error);
+        res.status(500).json({ 
+            message: 'Error searching claims',
+            error: error.message 
+        });
     }
 });
 
