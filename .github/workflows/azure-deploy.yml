@@ -1,10 +1,9 @@
-name: Backend CI/CD
+name: Azure App Service Deployment
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -19,25 +18,14 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '21.x'
-
+        
     - name: Install dependencies
       run: npm ci
-
-    - name: Set environment variables
-      run: |
-        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          echo "Setting production environment"
-          cp .env.production .env
-        else
-          echo "Setting development environment"
-          cp .env.development .env
-        fi
-
+      
     - name: Build
       run: npm run build
-
+      
     - name: Prepare deployment package
-      if: github.ref == 'refs/heads/main'
       run: |
         mkdir -p deploy
         cp -r src deploy/
@@ -46,12 +34,31 @@ jobs:
         cp web.config deploy/
         cp -r node_modules deploy/
         cp .jwt-secret deploy/ || echo "JWT secret file not found, continuing anyway"
-
+        
     - name: Deploy to Azure Web App
-      if: github.ref == 'refs/heads/main'
       uses: azure/webapps-deploy@v3
       with:
         app-name: 'livestreaming'
         slot-name: 'production'
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         package: ./deploy
+        
+    - name: Azure App Service Settings
+      uses: azure/appservice-settings@v1
+      with:
+        app-name: 'livestreaming'
+        slot-name: 'production'
+        app-settings-json: |
+          [
+            {
+              "name": "WEBSITE_NODE_DEFAULT_VERSION",
+              "value": "21.x",
+              "slotSetting": false
+            },
+            {
+              "name": "WEBSITE_WEBSOCKET_ENABLED",
+              "value": "1",
+              "slotSetting": false
+            }
+          ]
+      id: settings

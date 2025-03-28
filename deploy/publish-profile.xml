@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<publishData>
+  <publishProfile 
+    profileName="livestreaming - Web Deploy" 
+    publishMethod="MSDeploy" 
+    publishUrl="livestreaming-fjghamgvdsdbd7ct.scm.centralindia-01.azurewebsites.net:443" 
+    msdeploySite="livestreaming" 
+    userName="$livestreaming" 
+    userPWD="ErSYZRunEhCTdt4tDuD2fZQdhQmzyPPqZZA1cfMxd7jSNGoK3rhtPdg9XkFf" 
+    destinationAppUrl="https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net" 
+    SQLServerDBConnectionString="" 
+    mySQLDBConnectionString="" 
+    hostingProviderForumLink="" 
+    controlPanelLink="https://portal.azure.com" 
+    webSystem="WebSites">
+    <databases />
+  </publishProfile>
+</publishData>
