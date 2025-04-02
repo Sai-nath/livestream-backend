@@ -797,6 +797,38 @@ const initializeSocket = (server) => {
             }
         });
 
+        // Handle file messages
+        socket.on('file_message', (fileData) => {
+            try {
+                const { callId, role, name, bytes, text, timestamp, data } = fileData;
+                console.log(`Received file message: ${name} (${bytes} bytes) from ${role}`);
+                
+                // Find all sockets in the same call
+                const callSockets = Array.from(io.sockets.sockets.values())
+                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+
+                // Broadcast file to all other sockets in the call
+                callSockets.forEach(s => {
+                    console.log(`Sending file ${name} to socket:`, s.id);
+                    s.emit('file_message', { 
+                        role, 
+                        name, 
+                        bytes, 
+                        text, 
+                        timestamp,
+                        data, // Pass the base64 data
+                        path: null // The receiver will create their own blob URL
+                    });
+                });
+
+                // Optional: Save file to database or storage
+                // This could be implemented to store files in S3 or another storage service
+                // saveFileToStorage(fileData);
+            } catch (error) {
+                console.error('Error handling file message:', error);
+            }
+        });
+
         // Handle mute status
         socket.on('participant_muted', (data) => {
             const { callId, isMuted } = data;

@@ -4,7 +4,7 @@ const { createServer } = require('http');
 const { initializeSocket } = require('./socket');
 const db = require('./models');
 const apiRoutes = require('./routes/api.routes');
-const networkConfig = require('../../network-config');
+const networkConfig = require('./config/network-config');
 
 const app = express();
 
