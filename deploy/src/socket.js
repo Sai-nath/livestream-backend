@@ -298,16 +298,23 @@ const initializeSocket = (server) => {
                 console.log('Call accepted:', callData);
 
                 // Update claim status
-                await db.sequelize.query(
-                    `UPDATE Claims 
-                     SET ClaimStatus = 'InvestigationStarted',
-                         StartedAt = GETDATE()
-                     WHERE ClaimId = :claimId`,
-                    {
-                        replacements: { claimId: investigatorSocket.callRequest.claimId },
-                        type: db.Sequelize.QueryTypes.UPDATE
-                    }
-                );
+                try {
+                    await db.sequelize.query(
+                        `UPDATE Claims 
+                         SET ClaimStatus = 'InvestigationStarted'
+                         WHERE ClaimId = :claimId`,
+                        {
+                            replacements: { claimId: investigatorSocket.callRequest.claimId },
+                            type: db.Sequelize.QueryTypes.UPDATE
+                        }
+                    );
+                    
+                    console.log('Claim status updated successfully during call acceptance');
+                } catch (updateError) {
+                    console.error('Error updating claim status during call acceptance:', updateError);
+                    console.error('Error details:', JSON.stringify(updateError, null, 2));
+                    // Continue execution despite the error
+                }
 
                 // Notify all clients about status update
                 io.emit('claim_status_updated', {
@@ -470,17 +477,35 @@ const initializeSocket = (server) => {
             try {
                 console.log('Updating claim status:', { claimId, status });
                 
+                // First, check if the claim exists
+                const [claim] = await db.sequelize.query(
+                    `SELECT TOP 1 * FROM Claims WHERE ClaimId = :claimId`,
+                    {
+                        replacements: { claimId },
+                        type: db.Sequelize.QueryTypes.SELECT
+                    }
+                );
+                
+                if (!claim) {
+                    console.error(`Claim with ID ${claimId} not found`);
+                    socket.emit('call_error', { message: `Claim with ID ${claimId} not found` });
+                    return;
+                }
+                
+                console.log('Found claim:', claim);
+                
                 // Update claim status in database
                 await db.sequelize.query(
                     `UPDATE Claims 
-                     SET ClaimStatus = :status,
-                         ${status === 'InvestigationStarted' ? 'StartedAt = GETDATE()' : ''}
+                     SET ClaimStatus = :status
                      WHERE ClaimId = :claimId`,
                     {
                         replacements: { claimId, status },
                         type: db.Sequelize.QueryTypes.UPDATE
                     }
                 );
+                
+                console.log('Claim status updated successfully:', { claimId, status });
 
                 // Notify all connected clients about the status update
                 io.emit('claim_status_updated', {
@@ -488,11 +513,14 @@ const initializeSocket = (server) => {
                     status,
                     timestamp: new Date()
                 });
-
-                console.log('Claim status updated successfully:', { claimId, status });
             } catch (error) {
                 console.error('Error updating claim status:', error);
-                socket.emit('call_error', { message: 'Error updating claim status' });
+                // Provide more detailed error message
+                const errorMessage = error.message || 'Unknown database error';
+                socket.emit('call_error', { 
+                    message: `Error updating claim status: ${errorMessage}`,
+                    details: error.toString()
+                });
             }
         });
 

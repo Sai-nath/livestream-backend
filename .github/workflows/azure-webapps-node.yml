@@ -1,0 +1,97 @@
+name: Deploy Backend to Azure Web App
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: livestreaming    # set this to your application's name
+  AZURE_WEBAPP_PACKAGE_PATH: '.'      # set this to the path to your web app project, defaults to the repository root
+  NODE_VERSION: '18.x'                # set this to the node version to use
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: npm install and build
+      run: |
+        npm ci
+        npm run build --if-present
+
+    - name: Create .env file
+      run: |
+        echo "# Server Configuration" > .env
+        echo "PORT=5000" >> .env
+        echo "NODE_ENV=production" >> .env
+        echo "FRONTEND_URL=https://nice-sea-057f1c900.4.azurestaticapps.net" >> .env
+        echo "WEBSITE_CORS_ALLOWED_ORIGINS=https://nice-sea-057f1c900.4.azurestaticapps.net" >> .env
+        echo "JWT_SECRET=${{ secrets.JWT_SECRET || 'Sainath@518181' }}" >> .env
+        echo "DB_SERVER=${{ secrets.DB_SERVER || 'insurenexcore.database.windows.net' }}" >> .env
+        echo "DB_NAME=${{ secrets.DB_NAME || 'LiveStreaming' }}" >> .env
+        echo "DB_USER=${{ secrets.DB_USER || 'saiadmin' }}" >> .env
+        echo "DB_PASSWORD=${{ secrets.DB_PASSWORD || 'Sainath@518181' }}" >> .env
+        echo "WEBSITE_NODE_DEFAULT_VERSION=18.x" >> .env
+        echo "WEBSITE_WEBSOCKET_ENABLED=1" >> .env
+
+    - name: Create web.config
+      run: |
+        cat > web.config << 'EOL'
+        <?xml version="1.0" encoding="utf-8"?>
+        <configuration>
+          <system.webServer>
+            <webSocket enabled="true" />
+            <handlers>
+              <add name="iisnode" path="src/server.js" verb="*" modules="iisnode"/>
+            </handlers>
+            <rewrite>
+              <rules>
+                <rule name="StaticContent">
+                  <action type="Rewrite" url="public{REQUEST_URI}"/>
+                </rule>
+                <rule name="DynamicContent">
+                  <conditions>
+                    <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="True"/>
+                  </conditions>
+                  <action type="Rewrite" url="src/server.js"/>
+                </rule>
+              </rules>
+            </rewrite>
+            <iisnode watchedFiles="web.config;*.js" node_env="production" />
+          </system.webServer>
+        </configuration>
+        EOL
+
+    - name: Zip artifact for deployment
+      run: zip -r release.zip . -x "node_modules/*" ".git/*" ".github/*" ".vscode/*"
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Azure Web App
+      id: deploy-to-webapp
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: release.zip
+
+    - name: Logout from Azure
+      run: |
+        az logout

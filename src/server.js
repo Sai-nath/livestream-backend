@@ -8,12 +8,14 @@ const {
 } = require('./socket');
 const db = require('./models');
 const apiRoutes = require('./routes/api.routes');
+const networkConfig = require('./config/network-config');
 
 const app = express();
 
 // CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
+<<<<<<< HEAD
         // Parse allowed origins from environment variable
         const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || 'https://192.168.8.150:3000')
             .split(',')
@@ -37,9 +39,13 @@ const corsOptions = {
 
         // Combine and deduplicate origins
         const combinedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
+=======
+        // Get allowed origins from centralized network config
+        const allowedOrigins = networkConfig.cors.allowedOrigins;
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
 
         console.log('=== CORS Configuration ===');
-        console.log('Allowed Origins:', combinedOrigins);
+        console.log('Allowed Origins:', allowedOrigins);
         console.log('Incoming Origin:', origin);
         console.log('========================');
 
@@ -47,8 +53,13 @@ const corsOptions = {
         if (!origin) {
             return callback(null, true);
         }
+<<<<<<< HEAD
 
         if (combinedOrigins.includes(origin)) {
+=======
+        
+        if (allowedOrigins.includes(origin)) {
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
             callback(null, true);
         } else {
             console.warn('Origin not allowed by CORS:', origin);
@@ -88,7 +99,11 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
+<<<<<<< HEAD
             allowedOrigins: ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net', 'https://nice-sea-057f1c900.4.azurestaticapps.net', 'https://lvsadvance.web.app']
+=======
+            allowedOrigins: networkConfig.cors.allowedOrigins
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
         }
     });
 });
@@ -136,7 +151,7 @@ const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
 
 server.listen(PORT, () => {
     console.log(`Server is running on ${HOST}:${PORT}`);
-    console.log('CORS origins:', ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://nice-sea-057f1c900.4.azurestaticapps.net']);
+    console.log('CORS origins:', networkConfig.cors.allowedOrigins);
     console.log('Environment:', process.env.NODE_ENV);
 });
 

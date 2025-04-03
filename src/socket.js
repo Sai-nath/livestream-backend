@@ -127,8 +127,12 @@ const initializeSocket = (server) => {
                 'https://192.168.8.150:3000',
                 'https://192.168.8.150:3001',
                 'https://192.168.8.150:3002',
+<<<<<<< HEAD
                 'https://lvsadvance.web.app',
                 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net'
+=======
+                'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net'
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
             ],
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
             allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
@@ -235,6 +239,7 @@ const initializeSocket = (server) => {
                 recordedBy,
                 timestamp: new Date().toISOString()
             });
+<<<<<<< HEAD
         });
 
         socket.on('save_screenshot', async (data) => {
@@ -243,6 +248,173 @@ const initializeSocket = (server) => {
                 timestamp,
                 location,
                 capturedBy,
+=======
+          });
+        
+          // Handle saving video recording to StreamMedia table
+          socket.on('save_recording', async (data) => {
+            const { 
+                callId, 
+                timestamp, 
+                location, 
+                recordedBy, 
+                claimNumber,
+                s3Url, // S3 URL of the video recording
+                duration, // Duration of the recording in seconds
+                claimId // Added claimId parameter
+            } = data;
+        
+            try {
+                console.log('Saving recording with data:', JSON.stringify({
+                    callId,
+                    claimNumber,
+                    claimId,
+                    recordedBy
+                }));
+                
+                // Generate a unique media ID
+                const mediaId = Date.now().toString();
+                
+                // Parse and format the timestamp properly for SQL Server
+                // Convert ISO string to a Date object
+                const date = new Date(timestamp);
+                
+                // Format in SQL Server compatible format (YYYY-MM-DD HH:MM:SS.mmm)
+                const formattedDate = date.toISOString().replace('T', ' ').replace('Z', '');
+                
+                // Insert video recording reference using Sequelize query
+                await db.sequelize.query(
+                    `INSERT INTO StreamMedia (
+                        CallId, 
+                        MediaId, 
+                        MediaType, 
+                        MediaUrl, 
+                        Timestamp, 
+                        Latitude,
+                        Longitude,
+                        Accuracy,
+                        CapturedBy, 
+                        ClaimNumber, 
+                        Resolution,
+                        Duration
+                    ) VALUES (
+                        :callId, 
+                        :mediaId, 
+                        :mediaType, 
+                        :mediaUrl, 
+                        :timestamp, 
+                        :latitude,
+                        :longitude,
+                        :accuracy,
+                        :capturedBy, 
+                        :claimNumber, 
+                        :resolution,
+                        :duration
+                    )`,
+                    {
+                        replacements: {
+                            callId,
+                            mediaId,
+                            mediaType: 'video',
+                            mediaUrl: s3Url,
+                            timestamp: formattedDate,
+                            latitude: location?.latitude || null,
+                            longitude: location?.longitude || null,
+                            accuracy: location?.accuracy || null,
+                            capturedBy: recordedBy,
+                            claimNumber: claimNumber || null,
+                            resolution: location 
+                                ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` 
+                                : null,
+                            duration: duration || null
+                        },
+                        type: db.Sequelize.QueryTypes.INSERT
+                    }
+                );
+
+                // Extract the claimId from the claimNumber if not provided directly
+                let claimIdToUpdate = claimId;
+                
+                if (!claimIdToUpdate && claimNumber) {
+                    console.log(`Attempting to extract claimId from claimNumber: ${claimNumber}`);
+                    
+                    // Try to extract claimId from claimNumber (format: CLM-123)
+                    const match = claimNumber.match(/CLM-(\d+)/);
+                    if (match && match[1]) {
+                        claimIdToUpdate = match[1];
+                        console.log(`Extracted claimId ${claimIdToUpdate} from claimNumber pattern`);
+                    } else {
+                        // If no match, try to find the claim in the database
+                        console.log(`No pattern match, searching database for claim with number: ${claimNumber}`);
+                        const claims = await db.sequelize.query(
+                            `SELECT ClaimId FROM Claims WHERE ClaimNumber = :claimNumber`,
+                            {
+                                replacements: { claimNumber },
+                                type: db.Sequelize.QueryTypes.SELECT
+                            }
+                        );
+                        
+                        console.log(`Database search results:`, claims);
+                        
+                        if (claims.length > 0) {
+                            claimIdToUpdate = claims[0].ClaimId;
+                            console.log(`Found claimId ${claimIdToUpdate} in database`);
+                        } else {
+                            console.log(`No claim found with claimNumber: ${claimNumber}`);
+                        }
+                    }
+                }
+
+                // Update claim status to InvestigationCompleted if we have a valid claimId
+                if (claimIdToUpdate) {
+                    console.log(`Updating claim status for claimId: ${claimIdToUpdate}`);
+                    
+                    await db.sequelize.query(
+                        `UPDATE Claims 
+                         SET ClaimStatus = 'InvestigationCompleted',
+                             CompletedAt = GETDATE()
+                         WHERE ClaimId = :claimId`,
+                        {
+                            replacements: { claimId: claimIdToUpdate },
+                            type: db.Sequelize.QueryTypes.UPDATE
+                        }
+                    );
+
+                    // Notify all connected clients about the status update
+                    io.emit('claim_status_updated', {
+                        claimId: claimIdToUpdate,
+                        status: 'InvestigationCompleted',
+                        timestamp: new Date()
+                    });
+
+                    console.log(`Claim status updated to InvestigationCompleted for claim ${claimIdToUpdate}`);
+                } else {
+                    console.log(`Could not update claim status: No valid claimId found`);
+                }
+
+                socket.emit('recording_saved', {
+                    success: true,
+                    mediaId,
+                    message: 'Recording saved successfully'
+                });
+                
+                console.log(`Video recording saved for call ${callId}, claim ${claimNumber}`);
+            } catch (error) {
+                console.error('Error saving video recording:', error);
+                socket.emit('recording_saved', {
+                    success: false,
+                    error: error.message
+                });
+            }
+          });
+        
+          socket.on('save_screenshot', async (data) => {
+            const { 
+                callId, 
+                timestamp, 
+                location, 
+                capturedBy, 
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
                 claimNumber,
                 s3Url, // S3 URL from successful upload
                 screenshot // Fallback for when s3Url is not provided
@@ -489,10 +661,15 @@ const initializeSocket = (server) => {
                 });
 
             } catch (error) {
+<<<<<<< HEAD
                 console.error('Error accepting call:', error);
                 socket.emit('call_error', {
                     message: 'Error accepting call'
                 });
+=======
+                //console.error('Error accepting call:', error);
+                //socket.emit('call_error', { message: 'Error accepting call' });
+>>>>>>> ff1c2923e002a70cc082c564758e397be499c452
             }
         });
 
@@ -739,6 +916,38 @@ const initializeSocket = (server) => {
                 });
             } catch (error) {
                 console.error('Error handling chat message:', error);
+            }
+        });
+
+        // Handle file messages
+        socket.on('file_message', (fileData) => {
+            try {
+                const { callId, role, name, bytes, text, timestamp, data } = fileData;
+                console.log(`Received file message: ${name} (${bytes} bytes) from ${role}`);
+                
+                // Find all sockets in the same call
+                const callSockets = Array.from(io.sockets.sockets.values())
+                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+
+                // Broadcast file to all other sockets in the call
+                callSockets.forEach(s => {
+                    console.log(`Sending file ${name} to socket:`, s.id);
+                    s.emit('file_message', { 
+                        role, 
+                        name, 
+                        bytes, 
+                        text, 
+                        timestamp,
+                        data, // Pass the base64 data
+                        path: null // The receiver will create their own blob URL
+                    });
+                });
+
+                // Optional: Save file to database or storage
+                // This could be implemented to store files in S3 or another storage service
+                // saveFileToStorage(fileData);
+            } catch (error) {
+                console.error('Error handling file message:', error);
             }
         });
 
