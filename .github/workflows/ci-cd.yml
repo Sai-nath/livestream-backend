@@ -51,7 +51,7 @@ jobs:
       if: github.ref == 'refs/heads/main'
       uses: azure/webapps-deploy@v3
       with:
-        app-name: 'livestreaming'
+        app-name: 'LiveStreamingClaims'
         slot-name: 'production'
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
         package: ./deploy
