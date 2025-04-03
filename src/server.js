@@ -1,7 +1,11 @@
 const express = require('express');
 const cors = require('cors');
-const { createServer } = require('http');
-const { initializeSocket } = require('./socket');
+const {
+    createServer
+} = require('http');
+const {
+    initializeSocket
+} = require('./socket');
 const db = require('./models');
 const apiRoutes = require('./routes/api.routes');
 
@@ -23,11 +27,12 @@ const corsOptions = {
 
         // Default development origins
         const defaultOrigins = [
-            'http://localhost:3000', 
-            'https://localhost:3000', 
-            'http://192.168.8.150:3000', 
+            'http://localhost:3000',
+            'https://localhost:3000',
+            'http://192.168.8.150:3000',
             'https://192.168.8.150:5000',
-            'http://localhost:5000'
+            'http://localhost:5000',
+            'https://lvsadvance.web.app'
         ];
 
         // Combine and deduplicate origins
@@ -42,7 +47,7 @@ const corsOptions = {
         if (!origin) {
             return callback(null, true);
         }
-        
+
         if (combinedOrigins.includes(origin)) {
             callback(null, true);
         } else {
@@ -62,7 +67,9 @@ app.use(cors(corsOptions));
 
 // Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({
+    extended: true
+}));
 
 // Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
@@ -74,14 +81,14 @@ app.get('/health', (req, res) => {
     console.log('Request IP:', req.ip);
     console.log('Headers:', req.headers);
     console.log('===================');
-    res.status(200).json({ 
+    res.status(200).json({
         status: 'healthy',
         time: new Date().toISOString(),
         env: process.env.NODE_ENV,
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net','https://nice-sea-057f1c900.4.azurestaticapps.net']
+            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net', 'https://nice-sea-057f1c900.4.azurestaticapps.net', 'https://lvsadvance.web.app']
         }
     });
 });
@@ -98,7 +105,9 @@ app.use((err, req, res, next) => {
     console.error('Request Path:', req.path);
     console.error('Request Method:', req.method);
     console.error('===================');
-    res.status(500).json({ message: 'Something broke!' });
+    res.status(500).json({
+        message: 'Something broke!'
+    });
 });
 
 const server = createServer(app);

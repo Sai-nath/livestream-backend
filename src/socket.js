@@ -1,7 +1,9 @@
 const jwt = require('jsonwebtoken');
 const config = require('./config/auth');
 const db = require('./models');
-const { QueryTypes } = require('sequelize');
+const {
+    QueryTypes
+} = require('sequelize');
 
 let io;
 
@@ -52,9 +54,8 @@ const updateUserStatus = async (userId, isOnline) => {
              SET isOnline = :isOnline, 
                  lastLogin = GETDATE(), 
                  updatedAt = GETDATE() 
-             WHERE id = :userId`,
-            {
-                replacements: { 
+             WHERE id = :userId`, {
+                replacements: {
                     isOnline: isOnline,
                     userId: userId
                 },
@@ -64,9 +65,10 @@ const updateUserStatus = async (userId, isOnline) => {
 
         // Get user role
         const [user] = await db.sequelize.query(
-            `SELECT role FROM Users WHERE id = :userId`,
-            {
-                replacements: { userId: userId },
+            `SELECT role FROM Users WHERE id = :userId`, {
+                replacements: {
+                    userId: userId
+                },
                 type: QueryTypes.SELECT
             }
         );
@@ -90,9 +92,10 @@ const updateUserStatus = async (userId, isOnline) => {
                 `SELECT ClaimId, InvestigatorId 
                  FROM Claims 
                  WHERE SupervisorId = :supervisorId 
-                 AND ClaimStatus = 'Assigned'`,
-                {
-                    replacements: { supervisorId: userId },
+                 AND ClaimStatus = 'Assigned'`, {
+                    replacements: {
+                        supervisorId: userId
+                    },
                     type: QueryTypes.SELECT
                 }
             );
@@ -124,6 +127,7 @@ const initializeSocket = (server) => {
                 'https://192.168.8.150:3000',
                 'https://192.168.8.150:3001',
                 'https://192.168.8.150:3002',
+                'https://lvsadvance.web.app',
                 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net'
             ],
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -199,52 +203,62 @@ const initializeSocket = (server) => {
         // Add these handlers inside your io.on('connection', (socket) => { ... }) block
 
         // Handle recording status changes
-        socket.on('recording_status', ({ callId, isRecording, startedBy, stoppedBy, timestamp }) => {
+        socket.on('recording_status', ({
+            callId,
+            isRecording,
+            startedBy,
+            stoppedBy,
+            timestamp
+        }) => {
             console.log(`Recording status change in call ${callId}: ${isRecording ? 'started' : 'stopped'}`);
-            
+
             // Broadcast to all participants in the call
             socket.to(callId).emit('recording_status', {
-              isRecording,
-              startedBy: isRecording ? startedBy : null,
-              stoppedBy: isRecording ? null : stoppedBy,
-              timestamp
+                isRecording,
+                startedBy: isRecording ? startedBy : null,
+                stoppedBy: isRecording ? null : stoppedBy,
+                timestamp
             });
-          });
-          
-          // Handle recording complete notification (when upload is done)
-          socket.on('recording_completed', ({ callId, recordingUrl, recordedBy }) => {
+        });
+
+        // Handle recording complete notification (when upload is done)
+        socket.on('recording_completed', ({
+            callId,
+            recordingUrl,
+            recordedBy
+        }) => {
             console.log(`Recording completed in call ${callId}`);
-            
+
             // Broadcast to all participants that recording is available
             io.to(callId).emit('recording_available', {
-              recordingUrl,
-              recordedBy,
-              timestamp: new Date().toISOString()
+                recordingUrl,
+                recordedBy,
+                timestamp: new Date().toISOString()
             });
-          });
-        
-          socket.on('save_screenshot', async (data) => {
-            const { 
-                callId, 
-                timestamp, 
-                location, 
-                capturedBy, 
+        });
+
+        socket.on('save_screenshot', async (data) => {
+            const {
+                callId,
+                timestamp,
+                location,
+                capturedBy,
                 claimNumber,
                 s3Url, // S3 URL from successful upload
                 screenshot // Fallback for when s3Url is not provided
             } = data;
-        
+
             try {
                 // Generate a unique media ID
                 const mediaId = Date.now().toString();
-                
+
                 // Parse and format the timestamp properly for SQL Server
                 // Convert ISO string to a Date object
                 const date = new Date(timestamp);
-                
+
                 // Format in SQL Server compatible format (YYYY-MM-DD HH:MM:SS.mmm)
                 const formattedDate = date.toISOString().replace('T', ' ').replace('Z', '');
-                
+
                 // Insert screenshot reference using Sequelize query
                 await db.sequelize.query(
                     `INSERT INTO StreamMedia (
@@ -271,37 +285,36 @@ const initializeSocket = (server) => {
                         :capturedBy, 
                         :claimNumber, 
                         :resolution
-                    )`,
-                    {
+                    )`, {
                         replacements: {
                             callId,
                             mediaId,
                             mediaType: 'screenshot',
                             mediaUrl: s3Url || screenshot, // Use S3 URL if available, otherwise use data URL
                             timestamp: formattedDate, // Formatted date string
-                            latitude: location?.latitude || null,
-                            longitude: location?.longitude || null,
-                            accuracy: location?.accuracy || null,
+                            latitude: location ? .latitude || null,
+                            longitude: location ? .longitude || null,
+                            accuracy: location ? .accuracy || null,
                             capturedBy,
                             claimNumber: claimNumber || null,
-                            resolution: location 
-                                ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` 
-                                : 'N/A'
+                            resolution: location ?
+                                `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` :
+                                'N/A'
                         },
                         type: db.Sequelize.QueryTypes.INSERT
                     }
                 );
-        
+
                 // Emit success event
                 socket.emit('screenshot_saved', {
                     callId,
                     mediaId,
                     message: 'Screenshot saved successfully'
                 });
-        
+
             } catch (error) {
                 console.error('Error storing screenshot details:', error);
-                
+
                 // Emit error event
                 socket.emit('screenshot_save_error', {
                     callId,
@@ -313,10 +326,14 @@ const initializeSocket = (server) => {
         // Handle investigation call request
         socket.on('investigation_call_request', async (data) => {
             try {
-                const { claimId } = data;
-                
+                const {
+                    claimId
+                } = data;
+
                 if (!claimId) {
-                    socket.emit('call_error', { message: 'Claim ID is required' });
+                    socket.emit('call_error', {
+                        message: 'Claim ID is required'
+                    });
                     return;
                 }
 
@@ -325,9 +342,10 @@ const initializeSocket = (server) => {
                     `SELECT c.*, u.id as supervisorId, u.name as supervisorName 
                      FROM Claims c
                      JOIN Users u ON c.SupervisorId = u.id
-                     WHERE c.ClaimId = :claimId`,
-                    {
-                        replacements: { claimId },
+                     WHERE c.ClaimId = :claimId`, {
+                        replacements: {
+                            claimId
+                        },
                         type: db.Sequelize.QueryTypes.SELECT,
                         model: db.Claims,
                         mapToModel: true
@@ -335,27 +353,34 @@ const initializeSocket = (server) => {
                 );
 
                 if (!claim) {
-                    socket.emit('call_error', { message: 'Claim not found' });
+                    socket.emit('call_error', {
+                        message: 'Claim not found'
+                    });
                     return;
                 }
 
                 // Check if supervisor is online
                 if (!isUserOnline(claim.supervisorId)) {
-                    socket.emit('call_error', { message: 'Supervisor is offline' });
+                    socket.emit('call_error', {
+                        message: 'Supervisor is offline'
+                    });
                     return;
                 }
 
                 // Get investigator details
                 const [investigator] = await db.sequelize.query(
-                    `SELECT name FROM Users WHERE id = :investigatorId`,
-                    {
-                        replacements: { investigatorId: socket.userId },
+                    `SELECT name FROM Users WHERE id = :investigatorId`, {
+                        replacements: {
+                            investigatorId: socket.userId
+                        },
                         type: db.Sequelize.QueryTypes.SELECT
                     }
                 );
 
                 if (!investigator) {
-                    socket.emit('call_error', { message: 'Investigator not found' });
+                    socket.emit('call_error', {
+                        message: 'Investigator not found'
+                    });
                     return;
                 }
 
@@ -377,32 +402,43 @@ const initializeSocket = (server) => {
 
                     // Store the call request
                     socket.callRequest = callData;
-                    
-                    socket.emit('call_requesting', { 
+
+                    socket.emit('call_requesting', {
                         message: 'Call request sent to supervisor',
                         callId: callData.callId
                     });
                 } else {
-                    socket.emit('call_error', { message: 'Supervisor connection not found' });
+                    socket.emit('call_error', {
+                        message: 'Supervisor connection not found'
+                    });
                 }
             } catch (error) {
                 console.error('Error handling call request:', error);
-                socket.emit('call_error', { message: 'Error initiating call' });
+                socket.emit('call_error', {
+                    message: 'Error initiating call'
+                });
             }
         });
 
         // Handle accept investigation call
-        socket.on('accept_investigation_call', async ({ callId }) => {
+        socket.on('accept_investigation_call', async ({
+            callId
+        }) => {
             try {
-                console.log('Accepting call request:', { callId, socketId: socket.id });
-                
+                console.log('Accepting call request:', {
+                    callId,
+                    socketId: socket.id
+                });
+
                 // Find investigator socket
                 const investigatorSocket = Array.from(io.sockets.sockets.values())
-                    .find(s => s.callRequest?.callId === callId);
+                    .find(s => s.callRequest ? .callId === callId);
 
                 if (!investigatorSocket) {
                     console.error('Investigator socket not found for call:', callId);
-                    socket.emit('call_error', { message: 'Investigator not found' });
+                    socket.emit('call_error', {
+                        message: 'Investigator not found'
+                    });
                     return;
                 }
 
@@ -420,16 +456,16 @@ const initializeSocket = (server) => {
                 socket.emit('investigation_call_accepted', callData);
 
                 // Store call info for both parties
-                const callInfo = { 
-                    ...investigatorSocket.callRequest, 
+                const callInfo = {
+                    ...investigatorSocket.callRequest,
                     accepted: true,
                     supervisorId: socket.userId,
                     supervisorSocketId: socket.id
                 };
-                
+
                 socket.callRequest = callInfo;
                 investigatorSocket.callRequest = callInfo;
-                
+
                 console.log('Call accepted:', callData);
 
                 // Update claim status
@@ -437,9 +473,10 @@ const initializeSocket = (server) => {
                     `UPDATE Claims 
                      SET ClaimStatus = 'InvestigationStarted',
                          StartedAt = GETDATE()
-                     WHERE ClaimId = :claimId`,
-                    {
-                        replacements: { claimId: investigatorSocket.callRequest.claimId },
+                     WHERE ClaimId = :claimId`, {
+                        replacements: {
+                            claimId: investigatorSocket.callRequest.claimId
+                        },
                         type: db.Sequelize.QueryTypes.UPDATE
                     }
                 );
@@ -453,15 +490,21 @@ const initializeSocket = (server) => {
 
             } catch (error) {
                 console.error('Error accepting call:', error);
-                socket.emit('call_error', { message: 'Error accepting call' });
+                socket.emit('call_error', {
+                    message: 'Error accepting call'
+                });
             }
         });
 
         // Handle rejection
         socket.on('reject_investigation_call', async (data) => {
             try {
-                const { callId, investigatorId, reason } = data;
-                
+                const {
+                    callId,
+                    investigatorId,
+                    reason
+                } = data;
+
                 // Notify investigator that call was rejected
                 const investigatorSockets = userSockets.get(investigatorId);
                 if (investigatorSockets) {
@@ -474,15 +517,20 @@ const initializeSocket = (server) => {
                 }
             } catch (error) {
                 console.error('Error rejecting call:', error);
-                socket.emit('call_error', { message: 'Error rejecting call' });
+                socket.emit('call_error', {
+                    message: 'Error rejecting call'
+                });
             }
         });
 
         // Handle call cancellation by investigator
         socket.on('cancel_investigation_call', async (data) => {
             try {
-                const { callId, supervisorId } = data;
-                
+                const {
+                    callId,
+                    supervisorId
+                } = data;
+
                 // Notify supervisor that call was cancelled
                 const supervisorSockets = userSockets.get(supervisorId);
                 if (supervisorSockets) {
@@ -494,96 +542,124 @@ const initializeSocket = (server) => {
                 }
             } catch (error) {
                 console.error('Error cancelling call:', error);
-                socket.emit('call_error', { message: 'Error cancelling call' });
+                socket.emit('call_error', {
+                    message: 'Error cancelling call'
+                });
             }
         });
 
         // WebRTC signaling
-        socket.on('video_offer', ({ callId, offer }) => {
+        socket.on('video_offer', ({
+            callId,
+            offer
+        }) => {
             try {
-                console.log('Received video offer:', { callId, fromSocket: socket.id });
-                
+                console.log('Received video offer:', {
+                    callId,
+                    fromSocket: socket.id
+                });
+
                 // Only allow offers from sockets in an active call
-                if (!socket.callRequest?.accepted) {
+                if (!socket.callRequest ? .accepted) {
                     console.error('Unauthorized video offer from socket:', socket.id);
                     return;
                 }
 
                 const otherSockets = Array.from(io.sockets.sockets.values())
-                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+                    .filter(s => s.callRequest ? .callId === callId && s.id !== socket.id);
 
                 otherSockets.forEach(s => {
                     console.log('Sending video offer to:', s.id);
-                    s.emit('video_offer', { 
-                        callId, 
+                    s.emit('video_offer', {
+                        callId,
                         offer,
-                        fromSocketId: socket.id 
+                        fromSocketId: socket.id
                     });
                 });
             } catch (error) {
                 console.error('Error handling video offer:', error);
-                socket.emit('call_error', { message: 'Error in video offer' });
+                socket.emit('call_error', {
+                    message: 'Error in video offer'
+                });
             }
         });
 
-        socket.on('video_answer', ({ callId, answer }) => {
+        socket.on('video_answer', ({
+            callId,
+            answer
+        }) => {
             try {
-                console.log('Received video answer:', { callId, fromSocket: socket.id });
+                console.log('Received video answer:', {
+                    callId,
+                    fromSocket: socket.id
+                });
 
                 // Only allow answers from sockets in an active call
-                if (!socket.callRequest?.accepted) {
+                if (!socket.callRequest ? .accepted) {
                     console.error('Unauthorized video answer from socket:', socket.id);
                     return;
                 }
 
                 const otherSockets = Array.from(io.sockets.sockets.values())
-                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+                    .filter(s => s.callRequest ? .callId === callId && s.id !== socket.id);
 
                 otherSockets.forEach(s => {
                     console.log('Sending video answer to:', s.id);
-                    s.emit('video_answer', { 
-                        callId, 
+                    s.emit('video_answer', {
+                        callId,
                         answer,
-                        fromSocketId: socket.id 
+                        fromSocketId: socket.id
                     });
                 });
             } catch (error) {
                 console.error('Error handling video answer:', error);
-                socket.emit('call_error', { message: 'Error in video answer' });
+                socket.emit('call_error', {
+                    message: 'Error in video answer'
+                });
             }
         });
 
-        socket.on('ice_candidate', ({ callId, candidate }) => {
+        socket.on('ice_candidate', ({
+            callId,
+            candidate
+        }) => {
             try {
-                console.log('Received ICE candidate:', { callId, fromSocket: socket.id });
+                console.log('Received ICE candidate:', {
+                    callId,
+                    fromSocket: socket.id
+                });
 
                 // Only allow ICE candidates from sockets in an active call
-                if (!socket.callRequest?.accepted) {
+                if (!socket.callRequest ? .accepted) {
                     console.error('Unauthorized ICE candidate from socket:', socket.id);
                     return;
                 }
 
                 const otherSockets = Array.from(io.sockets.sockets.values())
-                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+                    .filter(s => s.callRequest ? .callId === callId && s.id !== socket.id);
 
                 otherSockets.forEach(s => {
                     console.log('Sending ICE candidate to:', s.id);
-                    s.emit('ice_candidate', { 
-                        callId, 
+                    s.emit('ice_candidate', {
+                        callId,
                         candidate,
-                        fromSocketId: socket.id 
+                        fromSocketId: socket.id
                     });
                 });
             } catch (error) {
                 console.error('Error handling ICE candidate:', error);
-                socket.emit('call_error', { message: 'Error in ICE candidate' });
+                socket.emit('call_error', {
+                    message: 'Error in ICE candidate'
+                });
             }
         });
 
-        socket.on('end_call', ({ callId }) => {
+        socket.on('end_call', ({
+            callId
+        }) => {
             const otherSockets = Array.from(io.sockets.sockets.values())
-                .filter(s => s.callRequest?.callId === callId);
-            
+                .filter(s => s.callRequest ? .callId === callId);
+
             otherSockets.forEach(s => {
                 s.emit('call_ended');
                 s.callRequest = null;
@@ -591,18 +667,26 @@ const initializeSocket = (server) => {
         });
 
         // Handle claim status update
-        socket.on('update_claim_status', async ({ claimId, status }) => {
+        socket.on('update_claim_status', async ({
+            claimId,
+            status
+        }) => {
             try {
-                console.log('Updating claim status:', { claimId, status });
-                
+                console.log('Updating claim status:', {
+                    claimId,
+                    status
+                });
+
                 // Update claim status in database
                 await db.sequelize.query(
                     `UPDATE Claims 
                      SET ClaimStatus = :status,
                          ${status === 'InvestigationStarted' ? 'StartedAt = GETDATE()' : ''}
-                     WHERE ClaimId = :claimId`,
-                    {
-                        replacements: { claimId, status },
+                     WHERE ClaimId = :claimId`, {
+                        replacements: {
+                            claimId,
+                            status
+                        },
                         type: db.Sequelize.QueryTypes.UPDATE
                     }
                 );
@@ -614,26 +698,44 @@ const initializeSocket = (server) => {
                     timestamp: new Date()
                 });
 
-                console.log('Claim status updated successfully:', { claimId, status });
+                console.log('Claim status updated successfully:', {
+                    claimId,
+                    status
+                });
             } catch (error) {
                 console.error('Error updating claim status:', error);
-                socket.emit('call_error', { message: 'Error updating claim status' });
+                socket.emit('call_error', {
+                    message: 'Error updating claim status'
+                });
             }
         });
 
         // Handle chat messages
-        socket.on('chat_message', ({ callId, role, message, timestamp }) => {
+        socket.on('chat_message', ({
+            callId,
+            role,
+            message,
+            timestamp
+        }) => {
             try {
-                console.log('Received chat message:', { callId, role, message });
-                
+                console.log('Received chat message:', {
+                    callId,
+                    role,
+                    message
+                });
+
                 // Find all sockets in the same call
                 const callSockets = Array.from(io.sockets.sockets.values())
-                    .filter(s => s.callRequest?.callId === callId && s.id !== socket.id);
+                    .filter(s => s.callRequest ? .callId === callId && s.id !== socket.id);
 
                 // Broadcast message to all other sockets in the call
                 callSockets.forEach(s => {
                     console.log('Sending chat message to:', s.id);
-                    s.emit('chat_message', { role, message, timestamp });
+                    s.emit('chat_message', {
+                        role,
+                        message,
+                        timestamp
+                    });
                 });
             } catch (error) {
                 console.error('Error handling chat message:', error);
@@ -642,33 +744,44 @@ const initializeSocket = (server) => {
 
         // Handle mute status
         socket.on('participant_muted', (data) => {
-            const { callId, isMuted } = data;
-            socket.to(callId).emit('participant_muted', { role: socket.role, isMuted });
+            const {
+                callId,
+                isMuted
+            } = data;
+            socket.to(callId).emit('participant_muted', {
+                role: socket.role,
+                isMuted
+            });
         });
 
         // Handle call rejoin after refresh
-        socket.on('rejoin_call', ({ callId, role }) => {
+        socket.on('rejoin_call', ({
+            callId,
+            role
+        }) => {
             console.log(`User ${socket.id} rejoining call ${callId} as ${role}`);
-            
+
             // Update socket data
             socket.callId = callId;
             socket.role = role;
-            
+
             // Join room
             socket.join(callId);
-            
+
             // Notify others
-            socket.to(callId).emit('participant_rejoined', { role });
+            socket.to(callId).emit('participant_rejoined', {
+                role
+            });
         });
 
         // Handle disconnect
         socket.on('disconnect', async () => {
             try {
                 console.log(`Socket disconnected: ${socket.id} for user: ${socket.userId}`);
-                
+
                 // Remove socket from user's socket list
                 const userWentOffline = removeUserSocket(socket.userId, socket.id);
-                
+
                 // Only update status if user has no more active sockets
                 if (userWentOffline) {
                     await updateUserStatus(socket.userId, false);
@@ -695,20 +808,26 @@ const initializeSocket = (server) => {
         });
 
         // Handle ping to keep connection alive
-        socket.on('ping_call', ({ callId }) => {
+        socket.on('ping_call', ({
+            callId
+        }) => {
             const call = socket.callRequest;
             if (call) {
-                socket.emit('pong_call', { callId });
+                socket.emit('pong_call', {
+                    callId
+                });
             }
         });
 
         // Handle explicit call end
-        socket.on('end_call', ({ callId }) => {
+        socket.on('end_call', ({
+            callId
+        }) => {
             const call = socket.callRequest;
             if (call) {
                 // Notify all participants
                 io.to(callId).emit('call_ended');
-                
+
                 // Cleanup call data
                 for (const participantId of call.participants) {
                     socket.callRequest = null;
