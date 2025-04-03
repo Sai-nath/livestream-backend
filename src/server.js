@@ -16,7 +16,7 @@ const app = express();
 const corsOptions = {
     origin: function (origin, callback) {
         // Parse allowed origins from environment variable
-        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || 'https://192.168.8.150:3000')
+        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || 'https://192.168.8.120:3000')
             .split(',')
             .map(origin => origin.trim())
             .filter(Boolean);
@@ -30,8 +30,10 @@ const corsOptions = {
         const defaultOrigins = [
             'http://localhost:3000',
             'https://localhost:3000',
-            'http://192.168.8.150:3000',
-            'https://192.168.8.150:5000',
+            'http://192.168.8.120:3000',
+            'https://192.168.8.120:3001',
+            'http://192.168.8.120:5000',
+            'https://192.168.8.120:5000',
             'http://localhost:5000',
             'https://lvsadvance.web.app'
         ];
@@ -89,7 +91,7 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: ['http://localhost:3000', 'http://192.168.8.150:3000', 'https://localhost:3000', 'https://192.168.8.150:5000', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net', 'https://nice-sea-057f1c900.4.azurestaticapps.net', 'https://lvsadvance.web.app']
+            allowedOrigins: ['http://localhost:3000', 'https://localhost:3000', 'http://192.168.8.120:3000', 'https://192.168.8.120:3001', 'http://192.168.8.120:5000', 'https://192.168.8.120:5000', 'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net', 'https://nice-sea-057f1c900.4.azurestaticapps.net', 'https://lvsadvance.web.app']
         }
     });
 });
@@ -133,10 +135,10 @@ db.initialize()
     });
 
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
+const HOST = process.env.WEBSITE_HOSTNAME || '192.168.8.120';
 
-server.listen(PORT, () => {
-    console.log(`Server is running on ${HOST}:${PORT}`);
+server.listen(PORT, '192.168.8.120', () => {
+    console.log(`Server is running on 192.168.8.120:${PORT}`);
     console.log('CORS origins:', networkConfig.cors.allowedOrigins);
     console.log('Environment:', process.env.NODE_ENV);
 });

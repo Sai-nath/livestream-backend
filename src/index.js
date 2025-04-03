@@ -8,7 +8,7 @@ require('dotenv').config({
 const server = require('./server');
 
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.WEBSITE_HOSTNAME || 'localhost';
+const HOST = process.env.WEBSITE_HOSTNAME || '192.168.8.120';
 
 // Log environment details
 console.log('=== Environment Details ===');
