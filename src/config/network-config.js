@@ -42,7 +42,7 @@ const config = {
       'https://192.168.8.120:5000',
       'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net',
       'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net',
-      'https://nice-sea-057f1c900.4.azurestaticapps.net',
+      'https://thankful-dune-06ac8a600.6.azurestaticapps.net',
       'https://lvsadvance.web.app'
     ],
     
