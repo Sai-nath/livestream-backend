@@ -18,7 +18,7 @@ const config = {
   
   // Backend Configuration
   backend: {
-    protocol: 'http',
+    protocol: 'https',
     port: 5000,
     get url() {
       return `${this.protocol}://${config.networkIP}:${this.port}`;
@@ -35,8 +35,9 @@ const config = {
       'http://localhost:3000',
       'https://localhost:3000',
       'http://localhost:5000',
+      'https://localhost:5000',
       'http://192.168.8.120:3000',
-      'https://192.168.8.120:3001',
+      'https://192.168.8.120:3000',
       'http://192.168.8.120:5000',
       'https://192.168.8.120:5000',
       'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net',
@@ -57,9 +58,16 @@ const config = {
   
   // AWS Configuration
   aws: {
-    region: 'eu-north-1',
-    s3Bucket: 'lvsbucket-5181'
-  }
+    region: process.env.AWS_REGION || 'eu-north-1',
+    s3Bucket: process.env.AWS_S3_BUCKET || 'lvsbucket-5181',
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  },
+  
+  // Environment Detection
+  isProduction: process.env.NODE_ENV === 'production',
+  isDevelopment: process.env.NODE_ENV === 'development' || !process.env.NODE_ENV
+  
 };
 
 module.exports = config;

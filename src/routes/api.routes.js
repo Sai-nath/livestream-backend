@@ -988,4 +988,255 @@ router.get('/claims/search', verifyToken, async (req, res) => {
     }
 });
 
+// Media download endpoint
+router.get('/media/download/:mediaId', verifyToken, async (req, res) => {
+    try {
+        const { mediaId } = req.params;
+        const { token } = req.query;
+        
+        if (!mediaId) {
+            return res.status(400).json({ message: 'Media ID is required' });
+        }
+        
+        console.log(`Attempting to download media with ID: ${mediaId}`);
+        console.log('AWS Credentials:', {
+            region: process.env.AWS_REGION,
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID ? 'Set' : 'Not set',
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'Not set',
+            bucket: process.env.AWS_S3_BUCKET
+        });
+        
+        // First check if this is a screenshot
+        let screenshot;
+        try {
+            screenshot = await db.sequelize.query(
+                `SELECT * FROM Screenshots WHERE MediaId = :mediaId`,
+                {
+                    replacements: { mediaId },
+                    type: QueryTypes.SELECT
+                }
+            );
+            console.log('Screenshot query result:', screenshot);
+        } catch (dbError) {
+            console.error('Error querying Screenshots table:', dbError);
+            // Check if the table exists
+            try {
+                const tables = await db.sequelize.query(
+                    `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'`,
+                    { type: QueryTypes.SELECT }
+                );
+                console.log('Available tables:', tables.map(t => t.TABLE_NAME));
+                
+                // If Screenshots table exists, try to get its columns
+                if (tables.some(t => t.TABLE_NAME === 'Screenshots')) {
+                    const columns = await db.sequelize.query(
+                        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Screenshots'`,
+                        { type: QueryTypes.SELECT }
+                    );
+                    console.log('Screenshots table columns:', columns.map(c => c.COLUMN_NAME));
+                }
+            } catch (schemaError) {
+                console.error('Error querying database schema:', schemaError);
+            }
+            
+            // Continue with the flow, we'll check videos next
+        }
+        
+        if (screenshot && screenshot.length > 0) {
+            console.log(`Found screenshot with ID: ${mediaId}`);
+            
+            // Get the S3 URL from the database
+            const s3Url = screenshot[0].MediaUrl;
+            console.log(`Screenshot S3 URL: ${s3Url}`);
+            
+            if (!s3Url) {
+                return res.status(404).json({ message: 'Screenshot URL not found' });
+            }
+            
+            // Use the AWS SDK to get the file and stream it back
+            const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+            
+            // Configure AWS from environment variables
+            const s3Client = new S3Client({
+                region: process.env.AWS_REGION,
+                credentials: {
+                    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+                }
+            });
+            
+            // Extract bucket and key from S3 URL
+            const s3UrlParts = new URL(s3Url);
+            const bucket = s3UrlParts.hostname.split('.')[0];
+            const key = s3UrlParts.pathname.substring(1); // Remove leading slash
+            
+            console.log(`Fetching from S3 - Bucket: ${bucket}, Key: ${key}`);
+            
+            const params = {
+                Bucket: bucket,
+                Key: key
+            };
+            
+            // Get the object
+            const { Body } = await s3Client.send(new GetObjectCommand(params));
+            
+            // Set appropriate headers
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            
+            try {
+                // Stream the response
+                const chunks = [];
+                for await (const chunk of Body) {
+                    chunks.push(chunk);
+                }
+                const buffer = Buffer.concat(chunks);
+                res.send(buffer);
+            } catch (err) {
+                console.error(`Error streaming S3 object: ${err.message}`);
+                // If the response hasn't been sent yet
+                if (!res.headersSent) {
+                    res.status(500).json({ message: 'Error fetching media from storage', error: err.message });
+                }
+            }
+            
+            return;
+        }
+        
+        // If not a screenshot, check if it's a video
+        let video;
+        try {
+            video = await db.sequelize.query(
+                `SELECT * FROM Videos WHERE MediaId = :mediaId`,
+                {
+                    replacements: { mediaId },
+                    type: QueryTypes.SELECT
+                }
+            );
+            console.log('Video query result:', video);
+        } catch (dbError) {
+            console.error('Error querying Videos table:', dbError);
+            // Check if the table exists
+            try {
+                const tables = await db.sequelize.query(
+                    `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'`,
+                    { type: QueryTypes.SELECT }
+                );
+                console.log('Available tables:', tables.map(t => t.TABLE_NAME));
+                
+                // If Videos table exists, try to get its columns
+                if (tables.some(t => t.TABLE_NAME === 'Videos')) {
+                    const columns = await db.sequelize.query(
+                        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Videos'`,
+                        { type: QueryTypes.SELECT }
+                    );
+                    console.log('Videos table columns:', columns.map(c => c.COLUMN_NAME));
+                }
+            } catch (schemaError) {
+                console.error('Error querying database schema:', schemaError);
+            }
+            
+            // If we get here, we couldn't find the media
+            return res.status(404).json({ message: 'Media not found or database error', error: dbError.message });
+        }
+        
+        if (video && video.length > 0) {
+            console.log(`Found video with ID: ${mediaId}`);
+            
+            // Get the S3 URL from the database
+            const s3Url = video[0].MediaUrl;
+            console.log(`Video S3 URL: ${s3Url}`);
+            
+            if (!s3Url) {
+                return res.status(404).json({ message: 'Video URL not found' });
+            }
+            
+            // Use the AWS SDK to get the file and stream it back
+            const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+            
+            // Configure AWS from environment variables
+            const s3Client = new S3Client({
+                region: process.env.AWS_REGION,
+                credentials: {
+                    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+                }
+            });
+            
+            // Extract bucket and key from S3 URL
+            const s3UrlParts = new URL(s3Url);
+            const bucket = s3UrlParts.hostname.split('.')[0];
+            const key = s3UrlParts.pathname.substring(1); // Remove leading slash
+            
+            console.log(`Fetching from S3 - Bucket: ${bucket}, Key: ${key}`);
+            
+            const params = {
+                Bucket: bucket,
+                Key: key
+            };
+            
+            // Get the object
+            const { Body } = await s3Client.send(new GetObjectCommand(params));
+            
+            // Set appropriate headers
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            
+            try {
+                // Stream the response
+                const chunks = [];
+                for await (const chunk of Body) {
+                    chunks.push(chunk);
+                }
+                const buffer = Buffer.concat(chunks);
+                res.send(buffer);
+            } catch (err) {
+                console.error(`Error streaming S3 object: ${err.message}`);
+                // If the response hasn't been sent yet
+                if (!res.headersSent) {
+                    res.status(500).json({ message: 'Error fetching media from storage', error: err.message });
+                }
+            }
+            
+            return;
+        }
+        
+        // If we get here, the media was not found
+        return res.status(404).json({ message: 'Media not found' });
+        
+    } catch (error) {
+        console.error('Error downloading media:', error);
+        res.status(500).json({ 
+            message: 'Error downloading media', 
+            error: error.message 
+        });
+    }
+});
+
+// Simple media download endpoint that serves a placeholder image
+router.get('/media/download/:mediaId', verifyToken, async (req, res) => {
+    try {
+        const { mediaId } = req.params;
+        console.log(`Simplified media download endpoint called for ID: ${mediaId}`);
+        
+        // Set headers for image
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        
+        // Send a simple placeholder image
+        // This is a 1x1 transparent pixel in base64
+        const base64Image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+        const imageBuffer = Buffer.from(base64Image, 'base64');
+        
+        // Send the image
+        res.send(imageBuffer);
+    } catch (error) {
+        console.error('Error in simplified media download endpoint:', error);
+        res.status(500).json({ 
+            message: 'Error serving media', 
+            error: error.message 
+        });
+    }
+});
+
 module.exports = router;

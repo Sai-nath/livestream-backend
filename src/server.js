@@ -1,11 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const {
-    createServer
-} = require('http');
-const {
-    initializeSocket
-} = require('./socket');
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+const https = require('https');
+const { initializeSocket } = require('./socket');
 const db = require('./models');
 const apiRoutes = require('./routes/api.routes');
 const networkConfig = require('./config/network-config');
@@ -15,34 +14,25 @@ const app = express();
 // CORS configuration
 const corsOptions = {
     origin: function (origin, callback) {
-        // Parse allowed origins from environment variable
-        const allowedOrigins = (process.env.WEBSITE_CORS_ALLOWED_ORIGINS || 'https://192.168.8.120:3000')
-            .split(',')
-            .map(origin => origin.trim())
-            .filter(Boolean);
-
-        // Add frontend URL if specified
-        if (process.env.FRONTEND_URL) {
+        // Get allowed origins from centralized network configuration
+        const allowedOrigins = networkConfig.cors.allowedOrigins;
+        
+        // Add frontend URL from environment if specified
+        if (process.env.FRONTEND_URL && !allowedOrigins.includes(process.env.FRONTEND_URL)) {
             allowedOrigins.push(process.env.FRONTEND_URL);
         }
-
-        // Default development origins
-        const defaultOrigins = [
-            'http://localhost:3000',
-            'https://localhost:3000',
-            'http://192.168.8.120:3000',
-            'https://192.168.8.120:3001',
-            'http://192.168.8.120:5000',
-            'https://192.168.8.120:5000',
-            'http://localhost:5000',
-            'https://lvsadvance.web.app'
+        
+        // Add Azure deployment URLs
+        const azureUrls = [
+            'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net',
+            'https://nice-sea-057f1c900.4.azurestaticapps.net'
         ];
-
-        // Combine and deduplicate origins
-        const combinedOrigins = [...new Set([...allowedOrigins, ...defaultOrigins])];
+        
+        // Combine all origins
+        const combinedOrigins = [...new Set([...allowedOrigins, ...azureUrls])];
 
         console.log('=== CORS Configuration ===');
-        console.log('Allowed Origins:', allowedOrigins);
+        console.log('Allowed Origins:', combinedOrigins);
         console.log('Incoming Origin:', origin);
         console.log('========================');
 
@@ -51,7 +41,7 @@ const corsOptions = {
             return callback(null, true);
         }
 
-        if (combinedOrigins.includes(origin)) {
+        if (combinedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
             callback(null, true);
         } else {
             console.warn('Origin not allowed by CORS:', origin);
@@ -91,7 +81,7 @@ app.get('/health', (req, res) => {
         node: process.version,
         cors: {
             frontendUrl: process.env.FRONTEND_URL,
-            allowedOrigins: ['http://localhost:3000', 'https://localhost:3000', 'http://192.168.8.120:3000', 'https://192.168.8.120:3001', 'http://192.168.8.120:5000', 'https://192.168.8.120:5000', 'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net', 'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net', 'https://nice-sea-057f1c900.4.azurestaticapps.net', 'https://lvsadvance.web.app']
+            allowedOrigins: networkConfig.cors.allowedOrigins
         }
     });
 });
@@ -113,7 +103,29 @@ app.use((err, req, res, next) => {
     });
 });
 
-const server = createServer(app);
+// Determine if we should use HTTPS based on environment
+let server;
+
+if (process.env.NODE_ENV === 'production') {
+    // In production, we'll use whatever the hosting platform provides
+    server = http.createServer(app);
+} else {
+    // For local development, try to use HTTPS with self-signed certificates
+    try {
+        // Check if certificates exist, otherwise fall back to HTTP
+        const certPath = path.join(__dirname, '../ssl');
+        const privateKey = fs.readFileSync(path.join(certPath, 'key.pem'), 'utf8');
+        const certificate = fs.readFileSync(path.join(certPath, 'cert.pem'), 'utf8');
+        
+        const credentials = { key: privateKey, cert: certificate };
+        server = https.createServer(credentials, app);
+        console.log('HTTPS server created successfully with self-signed certificates');
+    } catch (error) {
+        console.warn('Failed to create HTTPS server, falling back to HTTP:', error.message);
+        server = http.createServer(app);
+    }
+}
+
 const io = initializeSocket(server);
 
 // Initialize database with test data
@@ -134,13 +146,15 @@ db.initialize()
         console.error('====================');
     });
 
-const PORT = process.env.PORT || 5000;
-const HOST = process.env.WEBSITE_HOSTNAME || '192.168.8.120';
+const PORT = process.env.PORT || networkConfig.backend.port;
+const HOST = process.env.WEBSITE_HOSTNAME || networkConfig.networkIP;
 
-server.listen(PORT, '192.168.8.120', () => {
-    console.log(`Server is running on 192.168.8.120:${PORT}`);
-    console.log('CORS origins:', networkConfig.cors.allowedOrigins);
-    console.log('Environment:', process.env.NODE_ENV);
+server.listen(PORT, networkConfig.networkIP, () => {
+    const protocol = server instanceof https.Server ? 'HTTPS' : 'HTTP';
+    console.log(`=== Server Started ===`);
+    console.log(`Server is running on ${protocol}://${networkConfig.networkIP}:${PORT}`);
+    console.log('CORS origins:', networkConfig.cors.allowedOrigins.length, 'origins configured');
+    console.log('Environment:', process.env.NODE_ENV || 'development');
 });
 
 module.exports = server;

@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const config = require('./config/auth');
 const db = require('./models');
 const { QueryTypes } = require('sequelize');
+const networkConfig = require('./config/network-config');
  
 let io;
  
@@ -117,27 +118,37 @@ const updateUserStatus = async (userId, isOnline) => {
 const initializeSocket = (server) => {
     io = require('socket.io')(server, {
         cors: {
-            origin: [
-                'http://localhost:3000',
-                'http://192.168.8.120:3000',
-                'http://192.168.8.120:3001',
-                'https://localhost:3000',
-                'https://192.168.8.120:3000',
-                'https://192.168.8.120:3001',
-                'https://192.168.8.120:5000',
-                'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net',
-                'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net',
-                'https://nice-sea-057f1c900.4.azurestaticapps.net',
-                'https://lvsadvance.web.app'
-            ],
+            origin: networkConfig.cors.allowedOrigins, // Use centralized CORS configuration
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
             allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
             credentials: true
         },
-        pingTimeout: 60000, // Increase ping timeout to 60 seconds
-        pingInterval: 25000, // Send ping every 25 seconds
-        connectTimeout: 30000, // Connection timeout
-        transports: ['websocket', 'polling']
+        // Enable both WebSocket and polling, with WebSocket as primary
+        transports: ['websocket', 'polling'],
+        // Ensure WebSocket upgrades are allowed
+        allowUpgrades: true,
+        // Increase ping timeout for long-running video streams
+        pingTimeout: 120000, // 120 seconds (default is 20s)
+        // More frequent pings to detect disconnections faster
+        pingInterval: 25000, // 25 seconds (default is 25s)
+        // Increase the number of missed pings before disconnect
+        maxHttpBufferSize: 10e6, // 10 MB for larger media messages
+        // Connection timeout
+        connectTimeout: 45000, // 45 seconds
+        connectTimeout: 60000, // 60 seconds connection timeout
+        maxHttpBufferSize: 5e6, // 5MB max buffer size for uploads
+        // Polling configuration
+        polling: {
+            responseTimeout: 60000 // 60 seconds response timeout for polling
+        },
+        // Path for Socket.IO connections
+        path: '/socket.io/',
+        // Additional options to improve stability
+        maxHttpBufferSize: 1e8,  // 100MB max buffer size
+        httpCompression: true,   // Enable HTTP compression
+        perMessageDeflate: {     // WebSocket compression
+            threshold: 1024      // Only compress messages larger than 1KB
+        }
     });
  
     io.use(async (socket, next) => {
@@ -858,23 +869,66 @@ const initializeSocket = (server) => {
         socket.on('disconnect', async () => {
             try {
                 console.log(`Socket disconnected: ${socket.id} for user: ${socket.userId}`);
-               
-                // Remove socket from user's socket list
-                const userWentOffline = removeUserSocket(socket.userId, socket.id);
-               
-                // Only update status if user has no more active sockets
-                if (userWentOffline) {
-                    await updateUserStatus(socket.userId, false);
-                    console.log(`User ${socket.userId} went offline (no more active connections)`);
-                } else {
-                    console.log(`User ${socket.userId} still has ${userSockets.get(socket.userId).size} active connections`);
+                
+                // Clear heartbeat interval if it exists
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                    heartbeatInterval = null;
                 }
- 
-                // Check for inactive users
+                
+                // For investors in active calls, delay marking them as offline
+                // to allow for potential reconnection
+                const isInvestor = socket.role === 'INVESTOR';
+                const isInActiveCall = socket.callId && socket.callId.length > 0;
+                
+                if (isInvestor && isInActiveCall) {
+                    console.log(`Investor in active call disconnected. Setting reconnect timer for: ${socket.userId}`);
+                    
+                    // Set a timeout to check if the user reconnects within 30 seconds
+                    setTimeout(async () => {
+                        // Check if the user has reconnected
+                        const hasReconnected = userSockets.has(socket.userId) && 
+                                             userSockets.get(socket.userId).size > 0;
+                        
+                        if (!hasReconnected) {
+                            console.log(`Investor ${socket.userId} did not reconnect within timeout period`);
+                            await updateUserStatus(socket.userId, false);
+                            
+                            // Notify others in the call that the investor has left
+                            if (socket.callId) {
+                                io.to(socket.callId).emit('participant_left', { 
+                                    role: 'INVESTOR',
+                                    reason: 'timeout'
+                                });
+                            }
+                        }
+                    }, 30000); // 30 second grace period for reconnection
+                } else {
+                    // For non-investors or users not in calls, handle normally
+                    // Remove socket from user's socket list
+                    const userWentOffline = removeUserSocket(socket.userId, socket.id);
+                   
+                    // Only update status if user has no more active sockets
+                    if (userWentOffline) {
+                        await updateUserStatus(socket.userId, false);
+                        console.log(`User ${socket.userId} went offline (no more active connections)`);
+                    } else {
+                        console.log(`User ${socket.userId} still has ${userSockets.get(socket.userId).size} active connections`);
+                    }
+                }
+
+                // Check for inactive users - increase timeout for investors in calls
                 const now = Date.now();
                 for (const [userId, data] of onlineUsers.entries()) {
+                    // Get user role from data
+                    const userRole = data.role;
+                    const isUserInvestor = userRole === 'INVESTOR';
+                    
+                    // Different inactivity thresholds based on role
+                    const inactivityThreshold = isUserInvestor ? 15 * 60 * 1000 : 5 * 60 * 1000; // 15 mins for investors, 5 mins for others
+                    
                     const inactiveTime = now - data.lastActivity;
-                    if (inactiveTime > 5 * 60 * 1000) { // 5 minutes of inactivity
+                    if (inactiveTime > inactivityThreshold) {
                         const userSockets = io.sockets.adapter.rooms.get(userId);
                         if (!userSockets || userSockets.size === 0) {
                             await updateUserStatus(userId, false);
@@ -889,9 +943,39 @@ const initializeSocket = (server) => {
  
         // Handle ping to keep connection alive
         socket.on('ping_call', ({ callId }) => {
-            const call = socket.callRequest;
-            if (call) {
-                socket.emit('pong_call', { callId });
+            // Always respond to pings regardless of call state to maintain connection
+            socket.emit('pong_call', { callId, timestamp: Date.now() });
+            
+            // Update user activity timestamp
+            if (socket.userId && onlineUsers.has(socket.userId)) {
+                const userData = onlineUsers.get(socket.userId);
+                userData.lastActivity = new Date();
+                onlineUsers.set(socket.userId, userData);
+            }
+        });
+        
+        // Setup automatic ping interval for active calls
+        let heartbeatInterval;
+        
+        socket.on('join_call', (data) => {
+            // Start heartbeat when joining a call
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+            
+            heartbeatInterval = setInterval(() => {
+                if (socket.connected) {
+                    socket.emit('heartbeat', { timestamp: Date.now() });
+                }
+            }, 15000); // Send heartbeat every 15 seconds
+        });
+        
+        socket.on('heartbeat_response', () => {
+            // Update user activity timestamp on heartbeat response
+            if (socket.userId && onlineUsers.has(socket.userId)) {
+                const userData = onlineUsers.get(socket.userId);
+                userData.lastActivity = new Date();
+                onlineUsers.set(socket.userId, userData);
             }
         });
  
