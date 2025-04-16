@@ -135,9 +135,54 @@ router.get('/users', verifyToken, async (req, res) => {
 // Get claims
 router.get('/claims', verifyToken, async (req, res) => {
     try {
-        const { status } = req.query;
+        // Extract pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        
+        // Extract filter parameters
+        const { status, search, sortBy, sortOrder } = req.query;
+        
+        // Build where clause for filtering
+        let whereClause = {};
+        if (status) {
+            // Special handling for 'Assigned' status to include 'In Progress' claims as well
+            if (status === 'Assigned') {
+                whereClause.ClaimStatus = {
+                    [Op.in]: ['Assigned', 'In Progress']
+                };
+            } else {
+                whereClause.ClaimStatus = status;
+            }
+        }
+        
+        // Add search functionality
+        if (search) {
+            whereClause = {
+                ...whereClause,
+                [Op.or]: [
+                    { ClaimNumber: { [Op.like]: `%${search}%` } },
+                    { PolicyNumber: { [Op.like]: `%${search}%` } },
+                    { InsuredName: { [Op.like]: `%${search}%` } },
+                    { VehicleNumber: { [Op.like]: `%${search}%` } }
+                ]
+            };
+        }
+        
+        // Set up sorting
+        const order = [];
+        if (sortBy) {
+            order.push([sortBy, sortOrder === 'desc' ? 'DESC' : 'ASC']);
+        } else {
+            order.push(['CreatedAt', 'DESC']);
+        }
+        
+        // Get total count for pagination metadata
+        const totalCount = await db.Claim.count({ where: whereClause });
+        
+        // Execute query with pagination
         const claims = await db.Claim.findAll({
-            where: status ? { ClaimStatus: status } : {},
+            where: whereClause,
             include: [{
                 model: db.User,
                 as: 'investigator',
@@ -147,24 +192,46 @@ router.get('/claims', verifyToken, async (req, res) => {
                 as: 'supervisor',
                 attributes: ['id', 'name', 'email']
             }],
-            order: [['CreatedAt', 'DESC']]
+            order,
+            limit,
+            offset
         });
-        res.json(claims);
+        
+        // Return paginated results with metadata
+        res.json({
+            totalItems: totalCount,
+            totalPages: Math.ceil(totalCount / limit),
+            currentPage: page,
+            pageSize: limit,
+            data: claims
+        });
     } catch (error) {
         console.error('Get claims error:', error);
         res.status(500).json({ message: error.message });
     }
 });
 
-// Get assigned claims for investigator
+// Get assigned claims for investigator with pagination and filtering
 router.get('/claims/assigned', verifyToken, async (req, res) => {
     try {
         if (!req.user || !req.user.id) {
             return res.status(401).json({ message: 'User not authenticated' });
         }
-
-        const claims = await db.sequelize.query(
-            `SELECT c.*, 
+        
+        // Extract pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        
+        // Extract filter parameters
+        const { search, sortBy, sortOrder } = req.query;
+        
+        // Build the base query - use explicit column selection to avoid duplicates
+        let query = `SELECT 
+                    c.ClaimId, c.ClaimNumber, c.VehicleNumber, c.VehicleType, 
+                    c.PolicyNumber, c.InsuredName, c.ClaimStatus, 
+                    c.CreatedAt, c.AssignedAt, c.CompletedAt, c.ClosedAt, 
+                    c.SupervisorNotes, c.InvestigatorNotes, c.InvestigatorId,
                     i.name as InvestigatorName,
                     i.email as InvestigatorEmail,
                     s.id as SupervisorId,
@@ -176,10 +243,55 @@ router.get('/claims/assigned', verifyToken, async (req, res) => {
              LEFT JOIN Users i ON c.InvestigatorId = i.id
              LEFT JOIN Users s ON c.SupervisorId = s.id
              WHERE c.InvestigatorId = :userId
-             AND c.ClaimStatus IN ('Assigned', 'In Progress')
-             ORDER BY c.createdAt DESC`,
+             AND c.ClaimStatus IN ('Assigned', 'In Progress')`;
+        
+        // Add search condition if provided
+        const queryParams = { userId: req.user.id };
+        if (search) {
+            query += ` AND (c.ClaimNumber LIKE :search 
+                      OR c.PolicyNumber LIKE :search 
+                      OR c.CustomerName LIKE :search 
+                      OR c.CustomerPhone LIKE :search 
+                      OR c.CustomerEmail LIKE :search)`;
+            queryParams.search = `%${search}%`;
+        }
+        
+        // Add sorting
+        if (sortBy) {
+            const direction = sortOrder === 'desc' ? 'DESC' : 'ASC';
+            query += ` ORDER BY c.${sortBy} ${direction}`;
+        } else {
+            query += ` ORDER BY c.createdAt DESC`;
+        }
+        
+        // Create a query without ORDER BY for the count subquery
+        // SQL Server doesn't allow ORDER BY in subqueries used for COUNT
+        let countQuery = query;
+        // Remove any ORDER BY clause for the count query
+        if (countQuery.includes(' ORDER BY ')) {
+            countQuery = countQuery.substring(0, countQuery.indexOf(' ORDER BY '));
+        }
+        
+        // Get total count for pagination metadata
+        const countResult = await db.sequelize.query(
+            `SELECT COUNT(*) as total FROM (${countQuery}) as subquery`,
             {
-                replacements: { userId: req.user.id },
+                replacements: queryParams,
+                type: db.sequelize.QueryTypes.SELECT
+            }
+        );
+        const totalCount = countResult[0].total;
+        
+        // Add pagination
+        query += ` OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY`;
+        queryParams.offset = offset;
+        queryParams.limit = limit;
+        
+        // Execute the final query
+        const claims = await db.sequelize.query(
+            query,
+            {
+                replacements: queryParams,
                 type: QueryTypes.SELECT
             }
         );
@@ -223,7 +335,15 @@ router.get('/claims/assigned', verifyToken, async (req, res) => {
         }));
 
         console.log('Formatted claim:', JSON.stringify(formattedClaims[0], null, 2));
-        res.json(formattedClaims);
+        
+        // Return paginated results with metadata
+        res.json({
+            totalItems: totalCount,
+            totalPages: Math.ceil(totalCount / limit),
+            currentPage: page,
+            pageSize: limit,
+            data: formattedClaims
+        });
     } catch (error) {
         console.error('Error fetching assigned claims:', error);
         res.status(500).json({ 

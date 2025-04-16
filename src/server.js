@@ -24,7 +24,7 @@ const corsOptions = {
         
         // Add Azure deployment URLs
         const azureUrls = [
-            'https://livestreaming-fjghamgvdsdbd7ct.centralindia-01.azurewebsites.net',
+            'https://livestreamingclaims-hpaedbd6b6gbhkb0.centralindia-01.azurewebsites.net',
             'https://thankful-dune-06ac8a600.6.azurestaticapps.net'
         ];
         
